@@ -90,6 +90,13 @@ parser.add_argument(
     help="clang with the arm64_32 target for the Android guest (default: clang)",
 )
 parser.add_argument(
+    "--android-guest-cflags",
+    type=str,
+    help="extra compiler flags for the Android guest's game and platform code (not its C library), "
+    "for diagnostic builds: for example \"-fsanitize=shift-exponent -ftrivial-auto-var-init=zero\", whose "
+    "shift reports the guest's runtime logs (port/android/guest/runtime/guest_misc.c)",
+)
+parser.add_argument(
     "--android-abis",
     type=str,
     default="arm64-v8a",
@@ -155,6 +162,7 @@ sln = SimpleNamespace(
     port_pgo_profile=args.pgo_profile,
     android_ndk=args.android_ndk,
     android_guest_cc=args.android_guest_cc,
+    android_guest_cflags=args.android_guest_cflags,
     android_abis=[abi.strip() for abi in args.android_abis.split(",") if abi.strip()],
     web_emcc=args.web_emcc,
 )

@@ -569,6 +569,9 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         "-Wno-error=implicit-int",
         "-Wno-error=return-type",
     ]
+    # configure.py --android-guest-cflags: for the game and the platform
+    # layer only (not musl or the maths), such as a diagnostic build's checks
+    guest_extra = getattr(sln, "android_guest_cflags", None) or ""
     game_cflags = " ".join([
         guest_abi, guest_code, " ".join(game_flags), profile_flags,
         f"-include {prefix_header}", f"-include {semantics_header}",
@@ -577,6 +580,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         # game sources that call them
         f"-iquote {Path(config['game_sources'])}",
         game_defines_and_includes(config), *libc_includes, f"-idirafter {XDK_INCLUDE}",
+        guest_extra,
     ])
     for source in game_sources(config):
         cflags = game_cflags
@@ -597,6 +601,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         f"-I{PORT_DIR}/include", f"-I{TOML_DIR}", f"-I{EXPAT_DIR}", f"-I{KCP_DIR}", f"-I{MONOCYPHER_DIR}",
         f"-I{ZLIB_DIR}", "-Isource -Isource/cseries",
         f"-I{SDL_DIR}/include", f"-I{gl_include}", *libc_includes, f"-idirafter {XDK_INCLUDE}",
+        guest_extra,
     ])
     guest_host_only = {"memory_watch.c"}  # replaced by guest_memory_watch.c
     for source in sorted((LINUX_DIR / "src").glob("*.c")):
