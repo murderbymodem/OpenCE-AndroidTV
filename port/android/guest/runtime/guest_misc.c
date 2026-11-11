@@ -100,3 +100,13 @@ void backtrace_symbols_fd(void *const *frames, int size, int fd)
 	(void)size;
 	(void)fd;
 }
+
+#ifdef HALO_ARM32_GUEST
+/* MSVC's compiler barrier (source/scenario/scenario.c), which clang does
+not take as a builtin for this target: the call, to a function it cannot
+see into, is the barrier */
+__attribute__((noinline)) void _ReadWriteBarrier(void)
+{
+	__asm__ __volatile__("" ::: "memory");
+}
+#endif

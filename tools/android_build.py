@@ -659,7 +659,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         name=f"{p}_guest_link",
         command=(f"$android_ndk_bin/ld.lld -m {spec['emulation']} -static -nostdlib -T {linker_script} "
                  f"-Map $out.map -o $out @$out.rsp {libguestc} "
-                 "$$(${p}_host_cc -print-libgcc-file-name)"),
+                 f"$$(${p}_host_cc -print-libgcc-file-name)"),
         description="ANDROID LINK $out",
         rspfile="$out.rsp",
         rspfile_content="$in_newline",

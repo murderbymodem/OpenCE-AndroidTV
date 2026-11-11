@@ -7,6 +7,11 @@
 #endif
 
 #if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+#ifndef __SIZEOF_INT128__
+/* (the 32-bit ARM guest's compiler has no 128-bit integers; nothing the
+guest builds reads these structures, the host owns signals) */
+typedef struct { unsigned long long __lo, __hi; } __attribute__((aligned(16))) __uint128_t;
+#endif
 typedef unsigned long greg_t;
 typedef unsigned long gregset_t[34];
 
