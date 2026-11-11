@@ -47,7 +47,9 @@ import java.util.zip.ZipInputStream;
  * app must keep for Android to install a new version over it.
  */
 final class Updater {
-    private static final String REPOSITORY = "OpenCommunityEdition/OpenCE";
+    /** whose releases these are: the repository the build was made from
+     * (app/build.gradle), a fork's own for its builds */
+    private static final String REPOSITORY = BuildConfig.HALO_UPDATE_REPOSITORY;
     private static final String USER_AGENT = "halo-ce-universal-updater";
     private static final int TIMEOUT_MILLISECONDS = 20000;
     /** the most a download (a release's zip, about 35 MB) or the app in it may be */
