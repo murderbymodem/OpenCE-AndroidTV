@@ -1,4 +1,4 @@
-# OpenCE - Halo: Combat Evolved for Linux, Windows, Android and the web
+# OpenCE-AndroidTV - Halo: Combat Evolved for 32-bit AndroidTV boxes
 
 <p align="center">
   <img src="port/assets/icon/opence-icon.png" alt="OpenCE" width="128">
