@@ -96,6 +96,7 @@ python -m pytest -q tools/test_mods.py                      # mods played over a
 python -m pytest -q tools/test_bots.py                      # the bots in local games (needs assets/maps)
 python -m pytest -q tools/test_cache_file_formats.py tools/test_bmp_files.py tools/test_profile.py
 python tools/test_touch_layout.py                           # the Android touch layout (JDK 17+)
+python -m pytest -q tools/test_host_alignment.py           # the 32-bit Android app's fixups of unaligned accesses
 python tools/test_light_storage.py
 python tools/test_death_timing.py
 python -m pytest -q tools/test_web_build.py                 # the web build's graph, sockets, menus
