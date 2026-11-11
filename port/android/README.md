@@ -530,6 +530,13 @@ identifiers retain both fixes. The policy is selected before the game
 creates resources, stays fixed for the process, and is logged at startup.
 No console command, configuration change or device permission is needed.
 
+To try another family's policy on a device (to find which one its
+rendering needs), set `debug.halo.render_chip` before starting the game:
+`adb shell setprop debug.halo.render_chip 0` (unknown: both fixes), `1`
+(Snapdragon), `2` (MediaTek) or `3` (other); `adb shell setprop
+debug.halo.render_chip ""` goes back to the device's own. The log says
+`render chip: family <n> (debug.halo.render_chip)` while it applies.
+
 With geometry fixes enabled, Android bypasses the persistent geometry
 mirror and its cached index extents and uses the upload paths below.
 Affected players reported that bypassing the cache resolved stretched or
