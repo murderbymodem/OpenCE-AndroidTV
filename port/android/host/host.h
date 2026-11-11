@@ -136,4 +136,11 @@ void *host_resolve_import(const char *name);
 
 void *host_gl_resolve(const char *name);
 
+#ifdef __arm__
+#include <signal.h>
+/* the SIGBUS handler's: performs the 32-bit ARM guest's unaligned access
+that faulted and steps over it; 0 if it is not one (host_alignment.c) */
+int host_alignment_fixup(siginfo_t *information, void *context);
+#endif
+
 #endif

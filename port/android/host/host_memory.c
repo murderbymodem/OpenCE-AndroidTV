@@ -952,6 +952,12 @@ static void segv_handler(int signal_number, siginfo_t *information, void *contex
 
 static void bus_handler(int signal_number, siginfo_t *information, void *context)
 {
+#ifdef __arm__
+	/* the 32-bit guest's unaligned floating-point, double-word and multiple
+	accesses, done for it (host_alignment.c) */
+	if (host_alignment_fixup(information, context))
+		return;
+#endif
 	report_crash(signal_number, information, context);
 	chain(&previous_bus, signal_number, information, context);
 }
