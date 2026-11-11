@@ -17,9 +17,15 @@ def buildNumber = buildNumberText.isInteger() ? buildNumberText.toInteger() : 0
 // debug key of the computer that builds
 def signingKey = System.getenv("HALO_ANDROID_KEYSTORE")
 
-// the ABIs `ninja android` staged (configure.py --android-abis), which
-// ninja passes as -Phalo.abis: arm64-v8a, armeabi-v7a, or both
-def haloAbis = (project.findProperty("halo.abis") ?: "arm64-v8a").toString().split(",").collect { it.trim() }
+// the ABIs of the app (configure.py --android-abis): arm64-v8a, armeabi-v7a
+// or both. ninja passes them as -Phalo.abis; run by hand (tools/ci_build.py),
+// Gradle takes those `ninja android` staged a host library for
+def haloAbisProperty = project.findProperty("halo.abis")
+def haloAbis = haloAbisProperty ? haloAbisProperty.toString().split(",").collect { it.trim() } :
+    ["arm64-v8a", "armeabi-v7a"].findAll { new File(staged, "jniLibs/" + it + "/libmain.so").isFile() }
+if (!haloAbis) {
+    haloAbis = ["arm64-v8a"]
+}
 
 android {
     namespace "com.halo.decomp"

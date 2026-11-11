@@ -881,32 +881,32 @@ static void report_crash(int signal_number, siginfo_t *information, void *contex
 {
 	ucontext_t *ucontext = context;
 	const struct sigcontext *registers = (const struct sigcontext *)&ucontext->uc_mcontext;
-	uint64_t pc = registers->pc, lr = registers->regs[30];
+	uint64_t pc = HOST_CONTEXT_PC(registers), lr = HOST_CONTEXT_LR(registers);
 	int index;
 
 	host_logf(HOST_LOG_ERROR, "signal %d at address %p: pc %016llx lr %016llx sp %016llx",
 		signal_number, information->si_addr, (unsigned long long)pc, (unsigned long long)lr,
-		(unsigned long long)registers->sp);
+		(unsigned long long)HOST_CONTEXT_SP(registers));
 	if (pc >= host_image.base && pc < host_image.end)
 		host_logf(HOST_LOG_ERROR, "  in the guest image: addr2line -e halo_guest.elf 0x%llx 0x%llx",
 			(unsigned long long)pc, (unsigned long long)lr);
-	for (index = 0; index < 31; index += 4)
+	for (index = 0; index < HOST_CONTEXT_REGISTER_COUNT; index += 4)
 	{
-		host_logf(HOST_LOG_ERROR, "  x%-2d %016llx %016llx %016llx %016llx", index,
-			(unsigned long long)registers->regs[index],
-			(unsigned long long)(index + 1 < 31 ? registers->regs[index + 1] : 0),
-			(unsigned long long)(index + 2 < 31 ? registers->regs[index + 2] : 0),
-			(unsigned long long)(index + 3 < 31 ? registers->regs[index + 3] : 0));
+		host_logf(HOST_LOG_ERROR, "  " HOST_REGISTER_PREFIX "%-2d %016llx %016llx %016llx %016llx", index,
+			(unsigned long long)HOST_CONTEXT_REGISTER(registers, index),
+			(unsigned long long)(index + 1 < HOST_CONTEXT_REGISTER_COUNT ? HOST_CONTEXT_REGISTER(registers, index + 1) : 0),
+			(unsigned long long)(index + 2 < HOST_CONTEXT_REGISTER_COUNT ? HOST_CONTEXT_REGISTER(registers, index + 2) : 0),
+			(unsigned long long)(index + 3 < HOST_CONTEXT_REGISTER_COUNT ? HOST_CONTEXT_REGISTER(registers, index + 3) : 0));
 	}
-	/* the guest's frame records: fp and lr, 8 bytes each */
+	/* the guest's frame records: fp and lr, a pointer's size each */
 	{
-		uint64_t fp = registers->regs[29];
+		uint64_t fp = HOST_CONTEXT_FP(registers);
 
-		for (index = 0; index < 24 && fp && fp < LOW_LIMIT && (fp & 7) == 0; index++)
+		for (index = 0; index < 24 && fp && fp < LOW_LIMIT && (fp & (sizeof(host_frame_word) - 1)) == 0; index++)
 		{
-			const uint64_t *frame = (const uint64_t *)fp;
+			const host_frame_word *frame = (const host_frame_word *)(uintptr_t)fp;
 
-			if (!host_low_owns(fp, 16))
+			if (!host_low_owns(fp, 2 * sizeof(host_frame_word)))
 				break;
 			host_logf(HOST_LOG_ERROR, "  frame %2d: return %016llx", index, (unsigned long long)frame[1]);
 			fp = frame[0];

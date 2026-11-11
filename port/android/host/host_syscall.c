@@ -14,9 +14,16 @@ The exceptions are
 - the standard output and error streams, which go to logcat;
 - process exit, and calls that have no meaning for the guest (signal
   handlers, which the host owns).
+
+The guest's calls are AArch64's (host_guest_syscalls.h): its numbers, and
+the AArch64 kernel's structures. The 64-bit app passes the others through
+as they are. The 32-bit app (armeabi-v7a) makes each through bionic
+instead (arm_passthrough), with 32-bit ARM's numbers, its 64-bit file
+offsets and its struct stat, which the guest receives in AArch64's layout.
 */
 
 #include "host.h"
+#include "host_guest_syscalls.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -30,6 +37,13 @@ The exceptions are
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
+#include <sys/file.h>
+#include <sys/random.h>
+#include <sys/resource.h>
+#include <sys/utsname.h>
+#include <dirent.h>
+#include <sched.h>
+#include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -135,7 +149,7 @@ static long guest_writev(int fd, uint64_t vector, int count, int64_t offset, int
 		return total;
 	}
 	if (positional)
-		return result_of(pwritev(fd, host_vector, count, offset));
+		return result_of(pwritev64(fd, host_vector, count, offset));
 	return result_of(writev(fd, host_vector, count));
 }
 
@@ -153,7 +167,7 @@ static long guest_readv(int fd, uint64_t vector, int count, int64_t offset, int 
 		host_vector[index].iov_len = guest_vector[index].length;
 	}
 	if (positional)
-		return result_of(preadv(fd, host_vector, count, offset));
+		return result_of(preadv64(fd, host_vector, count, offset));
 	return result_of(readv(fd, host_vector, count));
 }
 
@@ -180,6 +194,195 @@ static long guest_futex(uint64_t address, int operation, uint32_t value, uint64_
 		GUEST(void *, address2), value3));
 }
 
+#ifdef __arm__
+/* ---------- 32-bit ARM: the calls the 64-bit app passes through */
+
+/* the AArch64 kernel's struct stat (the guest's arch/arm64_32/kstat.h) */
+struct guest_kstat
+{
+	uint64_t dev;
+	uint64_t ino;
+	uint32_t mode;
+	uint32_t nlink;
+	uint32_t uid;
+	uint32_t gid;
+	uint64_t rdev;
+	uint64_t pad;
+	int64_t size;
+	int32_t blksize;
+	int32_t pad2;
+	int64_t blocks;
+	int64_t atime_seconds, atime_nanoseconds;
+	int64_t mtime_seconds, mtime_nanoseconds;
+	int64_t ctime_seconds, ctime_nanoseconds;
+	uint32_t unused[2];
+};
+
+static long stat_out(int result, const struct stat64 *value, uint64_t address)
+{
+	struct guest_kstat *out = GUEST(struct guest_kstat *, address);
+
+	if (result != 0)
+		return -errno;
+	memset(out, 0, sizeof(*out));
+	out->dev = value->st_dev;
+	out->ino = value->st_ino;
+	out->mode = value->st_mode;
+	out->nlink = value->st_nlink;
+	out->uid = value->st_uid;
+	out->gid = value->st_gid;
+	out->rdev = value->st_rdev;
+	out->size = value->st_size;
+	out->blksize = (int32_t)value->st_blksize;
+	out->blocks = value->st_blocks;
+	out->atime_seconds = value->st_atim.tv_sec;
+	out->atime_nanoseconds = value->st_atim.tv_nsec;
+	out->mtime_seconds = value->st_mtim.tv_sec;
+	out->mtime_nanoseconds = value->st_mtim.tv_nsec;
+	out->ctime_seconds = value->st_ctim.tv_sec;
+	out->ctime_nanoseconds = value->st_ctim.tv_nsec;
+	return 0;
+}
+
+/* AArch64's fcntl commands for record locks (whose struct flock, with
+64-bit offsets, is 32-bit ARM's struct flock64) */
+#define GUEST_F_GETLK 5
+#define GUEST_F_SETLK 6
+#define GUEST_F_SETLKW 7
+
+static long arm_passthrough(long long number, long long a, long long b, long long c,
+	long long d, long long e, long long f)
+{
+	(void)e;
+	(void)f;
+	switch (number)
+	{
+	case GUEST_SYS_read:
+		return result_of(read((int)a, GUEST(void *, b), (size_t)(uint32_t)c));
+	case GUEST_SYS_openat:
+		return result_of(openat((int)a, GUEST(const char *, b), (int)c, (mode_t)d));
+	case GUEST_SYS_close:
+		return result_of(close((int)a));
+	case GUEST_SYS_lseek:
+	{
+		off64_t result = lseek64((int)a, (off64_t)b, (int)c);
+
+		return result == -1 ? -errno : (long)result;
+	}
+	case GUEST_SYS_pread64:
+		return result_of(pread64((int)a, GUEST(void *, b), (size_t)(uint32_t)c, (off64_t)d));
+	case GUEST_SYS_pwrite64:
+		return result_of(pwrite64((int)a, GUEST(const void *, b), (size_t)(uint32_t)c, (off64_t)d));
+	case GUEST_SYS_getdents64:
+		/* struct linux_dirent64 is the same on both */
+		return result_of(syscall(SYS_getdents64, (int)a, GUEST(void *, b), (unsigned int)c));
+	case GUEST_SYS_unlinkat:
+		return result_of(unlinkat((int)a, GUEST(const char *, b), (int)c));
+	case GUEST_SYS_renameat:
+		return result_of(renameat((int)a, GUEST(const char *, b), (int)c, GUEST(const char *, d)));
+	case GUEST_SYS_renameat2:
+		return result_of(syscall(SYS_renameat2, (int)a, GUEST(const char *, b), (int)c, GUEST(const char *, d),
+			(unsigned int)e));
+	case GUEST_SYS_mkdirat:
+		return result_of(mkdirat((int)a, GUEST(const char *, b), (mode_t)c));
+	case GUEST_SYS_fchmod:
+		return result_of(fchmod((int)a, (mode_t)b));
+	case GUEST_SYS_fchmodat:
+		return result_of(syscall(SYS_fchmodat, (int)a, GUEST(const char *, b), (mode_t)c));
+	case GUEST_SYS_ftruncate:
+		return result_of(ftruncate64((int)a, (off64_t)b));
+	case GUEST_SYS_fsync:
+		return result_of(fsync((int)a));
+	case GUEST_SYS_fdatasync:
+		return result_of(fdatasync((int)a));
+	case GUEST_SYS_fcntl:
+	{
+		int command = (int)b;
+
+		if (command == GUEST_F_GETLK)
+			command = F_GETLK64;
+		else if (command == GUEST_F_SETLK)
+			command = F_SETLK64;
+		else if (command == GUEST_F_SETLKW)
+			command = F_SETLKW64;
+		return result_of(syscall(SYS_fcntl64, (int)a, command, (unsigned long)(uint32_t)c));
+	}
+	case GUEST_SYS_getcwd:
+		/* the kernel's: the length of the path, with its NUL */
+		return result_of(syscall(SYS_getcwd, GUEST(char *, a), (size_t)(uint32_t)b));
+	case GUEST_SYS_chdir:
+		return result_of(chdir(GUEST(const char *, a)));
+	case GUEST_SYS_readlinkat:
+		return result_of(readlinkat((int)a, GUEST(const char *, b), GUEST(char *, c), (size_t)(uint32_t)d));
+	case GUEST_SYS_faccessat:
+		return result_of(syscall(SYS_faccessat, (int)a, GUEST(const char *, b), (int)c));
+	case GUEST_SYS_dup:
+		return result_of(dup((int)a));
+	case GUEST_SYS_dup3:
+		return result_of(dup3((int)a, (int)b, (int)c));
+	case GUEST_SYS_pipe2:
+		return result_of(pipe2(GUEST(int *, a), (int)b));
+	case GUEST_SYS_fstat:
+	{
+		struct stat64 value;
+
+		return stat_out(fstat64((int)a, &value), &value, (uint64_t)b);
+	}
+	case GUEST_SYS_newfstatat:
+	{
+		struct stat64 value;
+
+		return stat_out(fstatat64((int)a, GUEST(const char *, b), &value, (int)d), &value, (uint64_t)c);
+	}
+	case GUEST_SYS_getpid:
+		return getpid();
+	case GUEST_SYS_getppid:
+		return getppid();
+	case GUEST_SYS_gettid:
+		return gettid();
+	case GUEST_SYS_getuid:
+		return getuid();
+	case GUEST_SYS_geteuid:
+		return geteuid();
+	case GUEST_SYS_getgid:
+		return getgid();
+	case GUEST_SYS_getegid:
+		return getegid();
+	case GUEST_SYS_sched_yield:
+		return result_of(sched_yield());
+	case GUEST_SYS_getrandom:
+		return result_of(syscall(SYS_getrandom, GUEST(void *, a), (size_t)(uint32_t)b, (unsigned int)c));
+	case GUEST_SYS_kill:
+		return result_of(kill((pid_t)a, (int)b));
+	case GUEST_SYS_tkill:
+		return result_of(syscall(SYS_tkill, (int)a, (int)b));
+	case GUEST_SYS_tgkill:
+		return result_of(syscall(SYS_tgkill, (int)a, (int)b, (int)c));
+	case GUEST_SYS_rt_sigprocmask:
+		/* (8-byte signal sets on both) */
+		return result_of(syscall(SYS_rt_sigprocmask, (int)a, GUEST(const void *, b), GUEST(void *, c),
+			(size_t)(uint32_t)d));
+	case GUEST_SYS_uname:
+		return result_of(uname(GUEST(struct utsname *, a)));
+	case GUEST_SYS_prlimit64:
+		/* (struct rlimit64 on both) */
+		return result_of(syscall(SYS_prlimit64, (pid_t)a, (int)b, GUEST(const void *, c), GUEST(void *, d)));
+	case GUEST_SYS_getrlimit:
+		/* musl asks prlimit64 first */
+		return -ENOSYS;
+	case GUEST_SYS_umask:
+		return umask((mode_t)a);
+	case GUEST_SYS_flock:
+		return result_of(flock((int)a, (int)b));
+	case GUEST_SYS_membarrier:
+		return result_of(syscall(SYS_membarrier, (int)a, (unsigned int)b, (int)c));
+	default:
+		host_logf(HOST_LOG_WARN, "guest system call %lld is not supported", number);
+		return -ENOSYS;
+	}
+}
+#endif
+
 /* ---------- dispatch */
 
 long long host_syscall(long long number, long long a, long long b, long long c,
@@ -187,33 +390,34 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 {
 	switch (number)
 	{
-	case SYS_write:
+	case GUEST_SYS_write:
 		if (a == 1 || a == 2)
 		{
 			log_bytes((int)a, GUEST(const char *, b), (size_t)(uint32_t)c);
 			return (uint32_t)c;
 		}
 		return result_of(write((int)a, GUEST(const void *, b), (size_t)(uint32_t)c));
-	case SYS_writev:
+	case GUEST_SYS_writev:
 		return guest_writev((int)a, (uint64_t)b, (int)c, 0, 0);
-	case SYS_pwritev:
+	case GUEST_SYS_pwritev:
 		return guest_writev((int)a, (uint64_t)b, (int)c, d, 1);
-	case SYS_readv:
+	case GUEST_SYS_readv:
 		return guest_readv((int)a, (uint64_t)b, (int)c, 0, 0);
-	case SYS_preadv:
+	case GUEST_SYS_preadv:
 		return guest_readv((int)a, (uint64_t)b, (int)c, d, 1);
 
-	case SYS_clock_gettime:
-	case SYS_clock_getres:
+	case GUEST_SYS_clock_gettime:
+	case GUEST_SYS_clock_getres:
 	{
 		struct timespec value;
-		long result = syscall(number, (clockid_t)a, &value);
+		long result = number == GUEST_SYS_clock_gettime ? clock_gettime((clockid_t)a, &value) :
+			clock_getres((clockid_t)a, &value);
 
 		if (result == 0)
 			timespec_out((uint64_t)b, &value);
 		return result_of(result);
 	}
-	case SYS_gettimeofday:
+	case GUEST_SYS_gettimeofday:
 	{
 		struct timespec value;
 		struct guest_timespec *result = GUEST(struct guest_timespec *, a);
@@ -226,7 +430,7 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 		}
 		return 0;
 	}
-	case SYS_nanosleep:
+	case GUEST_SYS_nanosleep:
 	{
 		struct timespec request, remaining;
 		long result;
@@ -238,7 +442,7 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 			timespec_out((uint64_t)b, &remaining);
 		return result;
 	}
-	case SYS_clock_nanosleep:
+	case GUEST_SYS_clock_nanosleep:
 	{
 		struct timespec request, remaining;
 		int result;
@@ -250,16 +454,16 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 			timespec_out((uint64_t)d, &remaining);
 		return -result;
 	}
-	case SYS_futex:
+	case GUEST_SYS_futex:
 		return guest_futex((uint64_t)a, (int)b, (uint32_t)c, (uint64_t)d, (uint64_t)e, (uint32_t)f);
-	case SYS_ppoll:
+	case GUEST_SYS_ppoll:
 	{
 		struct timespec timeout;
 		int has_timeout = timespec_in((uint64_t)c, &timeout);
 
 		return result_of(ppoll(GUEST(struct pollfd *, a), (nfds_t)(uint32_t)b, has_timeout ? &timeout : NULL, NULL));
 	}
-	case SYS_utimensat:
+	case GUEST_SYS_utimensat:
 	{
 		struct timespec times[2];
 		const struct guest_timespec *guest_times = GUEST(const struct guest_timespec *, c);
@@ -272,102 +476,106 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 		return result_of(utimensat((int)a, GUEST(const char *, b), guest_times ? times : NULL, (int)d));
 	}
 
-	case SYS_mmap:
+	case GUEST_SYS_mmap:
 		return host_guest_mmap((uint64_t)a, (uint64_t)b, (int)c, (int)d, (int)e, f);
-	case SYS_munmap:
+	case GUEST_SYS_munmap:
 		return host_guest_munmap((uint64_t)a, (uint64_t)b);
-	case SYS_mprotect:
+	case GUEST_SYS_mprotect:
 		return host_guest_mprotect((uint64_t)a, (uint64_t)b, (int)c);
-	case SYS_madvise:
+	case GUEST_SYS_madvise:
 		if ((uint64_t)a + (uint64_t)b > 0x100000000ULL)
 			return -EINVAL;
-		return result_of(syscall(SYS_madvise, a, b, c));
-	case SYS_mremap:
-	case SYS_brk:
+		return result_of(madvise(GUEST(void *, a), (size_t)(uint64_t)b, (int)c));
+	case GUEST_SYS_mremap:
+	case GUEST_SYS_brk:
 		/* musl then falls back to mmap and copying */
 		return -ENOMEM;
 
-	case SYS_exit:
-	case SYS_exit_group:
+	case GUEST_SYS_exit:
+	case GUEST_SYS_exit_group:
 		host_exit((int)a);
 
-	case SYS_set_tid_address:
+	case GUEST_SYS_set_tid_address:
 		return gettid();
-	case SYS_rt_sigaction:
-	case SYS_sigaltstack:
+	case GUEST_SYS_rt_sigaction:
+	case GUEST_SYS_sigaltstack:
 		/* the host owns signal handling */
 		return 0;
-	case SYS_ioctl:
+	case GUEST_SYS_ioctl:
 		return -ENOTTY;
-	case SYS_statx:
-	case SYS_statfs:
-	case SYS_fstatfs:
-	case SYS_clone:
-	case SYS_clone3:
-	case SYS_execve:
-	case SYS_rt_sigtimedwait:
-	case SYS_pselect6:
-	case SYS_epoll_pwait:
-	case SYS_sysinfo:
-	case SYS_sendmsg:
-	case SYS_recvmsg:
-	case SYS_timer_create:
-	case SYS_timer_settime:
-	case SYS_timer_gettime:
-	case SYS_setitimer:
-	case SYS_getitimer:
-	case SYS_times:
-	case SYS_getrusage:
-	case SYS_wait4:
-	case SYS_waitid:
+	case GUEST_SYS_statx:
+	case GUEST_SYS_statfs:
+	case GUEST_SYS_fstatfs:
+	case GUEST_SYS_clone:
+	case GUEST_SYS_clone3:
+	case GUEST_SYS_execve:
+	case GUEST_SYS_rt_sigtimedwait:
+	case GUEST_SYS_pselect6:
+	case GUEST_SYS_epoll_pwait:
+	case GUEST_SYS_sysinfo:
+	case GUEST_SYS_sendmsg:
+	case GUEST_SYS_recvmsg:
+	case GUEST_SYS_timer_create:
+	case GUEST_SYS_timer_settime:
+	case GUEST_SYS_timer_gettime:
+	case GUEST_SYS_setitimer:
+	case GUEST_SYS_getitimer:
+	case GUEST_SYS_times:
+	case GUEST_SYS_getrusage:
+	case GUEST_SYS_wait4:
+	case GUEST_SYS_waitid:
 		return -ENOSYS;
 
-	case SYS_read:
-	case SYS_openat:
-	case SYS_close:
-	case SYS_lseek:
-	case SYS_pread64:
-	case SYS_pwrite64:
-	case SYS_getdents64:
-	case SYS_unlinkat:
-	case SYS_renameat:
-	case SYS_renameat2:
-	case SYS_mkdirat:
-	case SYS_fchmod:
-	case SYS_fchmodat:
-	case SYS_ftruncate:
-	case SYS_fsync:
-	case SYS_fdatasync:
-	case SYS_fcntl:
-	case SYS_getcwd:
-	case SYS_chdir:
-	case SYS_readlinkat:
-	case SYS_faccessat:
-	case SYS_dup:
-	case SYS_dup3:
-	case SYS_pipe2:
-	case SYS_fstat:
-	case SYS_newfstatat:
-	case SYS_getpid:
-	case SYS_getppid:
-	case SYS_gettid:
-	case SYS_getuid:
-	case SYS_geteuid:
-	case SYS_getgid:
-	case SYS_getegid:
-	case SYS_sched_yield:
-	case SYS_getrandom:
-	case SYS_kill:
-	case SYS_tkill:
-	case SYS_tgkill:
-	case SYS_rt_sigprocmask:
-	case SYS_uname:
-	case SYS_prlimit64:
-	case SYS_getrlimit:
-	case SYS_umask:
-	case SYS_flock:
-	case SYS_membarrier:
+	case GUEST_SYS_read:
+	case GUEST_SYS_openat:
+	case GUEST_SYS_close:
+	case GUEST_SYS_lseek:
+	case GUEST_SYS_pread64:
+	case GUEST_SYS_pwrite64:
+	case GUEST_SYS_getdents64:
+	case GUEST_SYS_unlinkat:
+	case GUEST_SYS_renameat:
+	case GUEST_SYS_renameat2:
+	case GUEST_SYS_mkdirat:
+	case GUEST_SYS_fchmod:
+	case GUEST_SYS_fchmodat:
+	case GUEST_SYS_ftruncate:
+	case GUEST_SYS_fsync:
+	case GUEST_SYS_fdatasync:
+	case GUEST_SYS_fcntl:
+	case GUEST_SYS_getcwd:
+	case GUEST_SYS_chdir:
+	case GUEST_SYS_readlinkat:
+	case GUEST_SYS_faccessat:
+	case GUEST_SYS_dup:
+	case GUEST_SYS_dup3:
+	case GUEST_SYS_pipe2:
+	case GUEST_SYS_fstat:
+	case GUEST_SYS_newfstatat:
+	case GUEST_SYS_getpid:
+	case GUEST_SYS_getppid:
+	case GUEST_SYS_gettid:
+	case GUEST_SYS_getuid:
+	case GUEST_SYS_geteuid:
+	case GUEST_SYS_getgid:
+	case GUEST_SYS_getegid:
+	case GUEST_SYS_sched_yield:
+	case GUEST_SYS_getrandom:
+	case GUEST_SYS_kill:
+	case GUEST_SYS_tkill:
+	case GUEST_SYS_tgkill:
+	case GUEST_SYS_rt_sigprocmask:
+	case GUEST_SYS_uname:
+	case GUEST_SYS_prlimit64:
+	case GUEST_SYS_getrlimit:
+	case GUEST_SYS_umask:
+	case GUEST_SYS_flock:
+	case GUEST_SYS_membarrier:
+#ifdef __arm__
+		return arm_passthrough(number, a, b, c, d, e, f);
+#else
 		return result_of(syscall(number, a, b, c, d, e, f));
+#endif
 
 	default:
 		host_logf(HOST_LOG_WARN, "guest system call %lld is not supported", number);

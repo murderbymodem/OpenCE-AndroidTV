@@ -96,6 +96,10 @@ def main() -> int:
         configure += ["--lto=off", "--pgo=off"]
     if args.config == "profile":
         configure.append("--profile")
+    # the Android ABIs (configure.py --android-abis), arm64-v8a unless
+    # CI_ANDROID_ABIS names others
+    if args.platform == "android" and os.environ.get("CI_ANDROID_ABIS"):
+        configure += ["--android-abis", os.environ["CI_ANDROID_ABIS"]]
     launcher = os.environ.get("CI_COMPILER_LAUNCHER")
     if launcher:
         configure += ["--compiler-launcher", launcher]

@@ -155,6 +155,7 @@ ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
         "assembler_target": "--target=aarch64-linux-android",
         "imports_arch": "arm64",
         "emulation": "aarch64linux",
+        "host_flags": [],
     },
     "armeabi-v7a": {
         "prefix": "android_armv7",
@@ -167,6 +168,9 @@ ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
         "assembler_target": "--target=armv7a-unknown-linux-musleabi -mfloat-abi=softfp -marm",
         "imports_arch": "arm",
         "emulation": "armelf_linux_eabi",
+        # 64-bit file offsets in bionic's calls (lseek, mmap, struct stat):
+        # the guest's, and the maps' sizes, are 64-bit
+        "host_flags": ["-D_FILE_OFFSET_BITS=64"],
     },
 }
 
@@ -688,13 +692,13 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     host_obj_dir = root / "host" / "obj"
     n.rule(
         name=f"{p}_host_cc",
-        command="${p}_host_cc -MMD -MF $out.d $cflags -c $in -o $out",
+        command=f"${p}_host_cc -MMD -MF $out.d $cflags -c $in -o $out",
         description="ANDROID HOST CC $out",
         depfile="$out.d",
         deps="gcc",
     )
     host_cflags = " ".join([
-        "-O2", "-g", "-fPIC", "-Wall", "-Wno-unused-function", "-D_GNU_SOURCE",
+        "-O2", "-g", "-fPIC", "-Wall", "-Wno-unused-function", "-D_GNU_SOURCE", *spec["host_flags"],
         f"-I{PORT_DIR}/include", f"-I{PORT_DIR}/host", f"-I{SDL_DIR}/include", f"-I{LINUX_DIR}/src",
         f"-I{TOML_DIR}",
     ])

@@ -16,6 +16,35 @@ port/android/include/halo_android_abi.h for the guest contract.
 
 #include "halo_android_abi.h"
 
+/* ---------- the registers of a signal's context (struct sigcontext, in
+uc_mcontext), on the two ABIs the app is built for: AArch64 (arm64-v8a) and
+32-bit ARM (armeabi-v7a). Both guests keep frame records {fp, lr}, of
+pointer-sized words (the 32-bit guest is built in ARM state, whose frame
+pointer is r11). */
+
+#if defined(__aarch64__)
+typedef uint64_t host_frame_word;
+#define HOST_CONTEXT_PC(registers) ((registers)->pc)
+#define HOST_CONTEXT_LR(registers) ((registers)->regs[30])
+#define HOST_CONTEXT_SP(registers) ((registers)->sp)
+#define HOST_CONTEXT_FP(registers) ((registers)->regs[29])
+#define HOST_CONTEXT_REGISTER_COUNT 31
+#define HOST_CONTEXT_REGISTER(registers, index) ((registers)->regs[index])
+#define HOST_REGISTER_PREFIX "x"
+#elif defined(__arm__)
+typedef uint32_t host_frame_word;
+#define HOST_CONTEXT_PC(registers) ((registers)->arm_pc)
+#define HOST_CONTEXT_LR(registers) ((registers)->arm_lr)
+#define HOST_CONTEXT_SP(registers) ((registers)->arm_sp)
+#define HOST_CONTEXT_FP(registers) ((registers)->arm_fp)
+/* r0 to r15 (arm_r0 ... arm_pc follow each other) */
+#define HOST_CONTEXT_REGISTER_COUNT 16
+#define HOST_CONTEXT_REGISTER(registers, index) ((&(registers)->arm_r0)[index])
+#define HOST_REGISTER_PREFIX "r"
+#else
+#error the Android app is built for arm64-v8a and armeabi-v7a
+#endif
+
 /* ---------- logging (logcat tag "halo") */
 
 void host_logf(int priority, const char *format, ...) __attribute__((format(printf, 2, 3)));

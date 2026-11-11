@@ -61,15 +61,16 @@ static void sample_handler(int signal_number, siginfo_t *information, void *cont
 	const struct sigcontext *registers = (const struct sigcontext *)&ucontext->uc_mcontext;
 	char line[512];
 	int length, depth;
-	uint64_t fp = registers->regs[29];
+	uint64_t fp = HOST_CONTEXT_FP(registers);
 
 	(void)signal_number;
 	(void)information;
 	length = snprintf(line, sizeof(line), "sample tid %d: pc %llx lr %llx", gettid(),
-		(unsigned long long)registers->pc, (unsigned long long)registers->regs[30]);
-	for (depth = 0; depth < 12 && fp && fp < 0x100000000ULL && !(fp & 7) && host_low_owns(fp, 16); depth++)
+		(unsigned long long)HOST_CONTEXT_PC(registers), (unsigned long long)HOST_CONTEXT_LR(registers));
+	for (depth = 0; depth < 12 && fp && fp < 0x100000000ULL && !(fp & (sizeof(host_frame_word) - 1)) &&
+		host_low_owns(fp, 2 * sizeof(host_frame_word)); depth++)
 	{
-		const uint64_t *frame = (const uint64_t *)fp;
+		const host_frame_word *frame = (const host_frame_word *)(uintptr_t)fp;
 
 		length += snprintf(line + length, sizeof(line) - length, " %llx", (unsigned long long)frame[1]);
 		if (frame[0] <= fp)

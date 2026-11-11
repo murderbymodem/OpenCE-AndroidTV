@@ -4,6 +4,13 @@
 `ninja android_apk` makes an app from it:
 `port/android/app/build/outputs/apk/debug/app-debug.apk`.
 
+`python configure.py --android-abis armeabi-v7a` builds it for 32-bit ARM
+Android instead, for devices whose Android runs only 32-bit apps (many
+Android TV devices, such as the Onn 4K Pro, even with a 64-bit processor);
+`--android-abis arm64-v8a,armeabi-v7a` makes one app with both. The
+32-bit app needs an ARMv7-A processor with NEON. Refer to "The 32-bit app"
+below.
+
 The game shows its graphics with OpenGL ES 3. It plays sound through SDL3
 (AAudio). It accepts input from game controllers, for example a PlayStation
 5 DualSense on Bluetooth, and from the touchscreen (refer to "Controls").
@@ -611,3 +618,35 @@ an unload summary and the first allocation failure per cache lifetime in the
 normal platform log. No test log files, per-frame reports, texture fingerprints
 or uniform readbacks run in the permanent build. The cache can still exhaust
 its limit or system memory; normal fallback handling remains available.
+
+## The 32-bit app
+
+The 64-bit app runs the game as ILP32 AArch64 code. A 32-bit Android cannot
+run AArch64 code at all, so the 32-bit app (armeabi-v7a) runs the game as
+32-bit ARM code (ARMv7-A with NEON, in ARM state, Android's softfp calling
+convention), in an ordinary 32-bit app:
+
+- the guest image is `halo_guest_armv7.elf`, compiled for ELF directly
+  (`--target=armv7a-unknown-linux-musleabi`), without the Mach-O
+  conversion; it is linked at the same address, 0x88000000, after the same
+  Xbox window at 0x80000000;
+- its C library is the same musl, built against the same system call
+  interface (`guest/libc/arch/arm64_32`: AArch64's numbers and structures),
+  which the host translates to 32-bit ARM's calls through bionic
+  (`host/host_syscall.c`, `host/host_guest_syscalls.h`);
+- its import stubs (`tools/android_imports.py --arch arm`) load the host's
+  function from the same 8-byte table entries, and enter it with `ldr pc`,
+  which goes to Thumb or ARM code as the address says;
+- `HALO_ARM32_GUEST` and `HALO_ANDROID_GUEST` are defined for it, not
+  `HALO_ARM64_GUEST`.
+
+In a 32-bit process the game, ART, the graphics driver and the app share
+the 4 GB (or 3 GB) of address space, so the fixed ranges at 0x80000000 are
+more often taken by the time the game loads. The app then says so and
+writes `memory_map.txt` (refer to "Game data").
+
+32-bit ARM, unlike AArch64, stops a program at some unaligned accesses
+(floating-point and double-word loads and stores of addresses that are not
+a multiple of 4). Such an access is a SIGBUS in logcat (tag `halo`), with
+the guest's address: `llvm-addr2line -e build/android/armv7/halo_guest_armv7.elf <address>`
+names the line.
