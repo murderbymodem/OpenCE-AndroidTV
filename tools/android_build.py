@@ -80,6 +80,7 @@ GUEST_ABI_FLAGS = [
     # the ILP32 guest's code paths, the OpenGL ES renderer's, and the app's
     # (in the port's sources, each its own macro)
     "-DHALO_ARM64_GUEST=1",
+    "-DHALO_ANDROID_GUEST=1",
     "-DHALO_GLES=1",
     "-DHALO_ANDROID=1",
     # ARMv8.0: nothing the emulator's binary translation or an older
@@ -100,6 +101,74 @@ GUEST_ABI_FLAGS = [
     "-ffp-contract=off",
     "-O2",
 ]
+
+# The 32-bit ARM guest (armeabi-v7a: Android TV boxes and other devices whose
+# Android is 32-bit only): ARMv7-A code with NEON, in ARM state (whose frame
+# records are {fp, lr}, as the crash reports read them), with Android's
+# softfp calling convention so that the guest calls the host's functions
+# (floats in core registers) directly. ELF from the start: no conversion.
+ARMV7_GUEST_ABI_FLAGS = [
+    "--target=armv7a-unknown-linux-musleabi",
+    "-march=armv7-a",
+    "-mfpu=neon",
+    "-mfloat-abi=softfp",
+    "-marm",
+    "-fno-pic",
+    "-fno-pie",
+    "-D__linux__=1",
+    "-D__unix__=1",
+    "-DHALO_ARM32_GUEST=1",
+    "-DHALO_ANDROID_GUEST=1",
+    "-DHALO_GLES=1",
+    "-DHALO_ANDROID=1",
+    "-nostdinc",
+    "-fshort-wchar",
+    "-fno-stack-protector",
+    "-fno-unwind-tables",
+    "-fno-asynchronous-unwind-tables",
+    "-femulated-tls",
+    "-ffp-contract=off",
+    "-O2",
+]
+
+
+def _arm64_compile(launcher: str, python: str) -> str:
+    return (f"{launcher}$android_guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
+            f"{python} tools/android_asm_convert.py $out.darwin.s $out.s && "
+            f"$android_guest_cc --target=aarch64-linux-android -c $out.s -o $out")
+
+
+def _armv7_compile(launcher: str, python: str) -> str:
+    return f"{launcher}$android_guest_cc -MMD -MF $out.d $cflags -c $in -o $out"
+
+
+# what each ABI of the app builds with (configure.py --android-abis)
+ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
+    "arm64-v8a": {
+        "prefix": "android",
+        "build": BUILD,
+        "image": "halo_guest.elf",
+        "host_triple": "aarch64-linux-android",
+        "abi_flags": GUEST_ABI_FLAGS,
+        "compile": _arm64_compile,
+        "tools": [Path("tools/android_asm_convert.py")],
+        "assembler_target": "--target=aarch64-linux-android",
+        "imports_arch": "arm64",
+        "emulation": "aarch64linux",
+    },
+    "armeabi-v7a": {
+        "prefix": "android_armv7",
+        "build": BUILD / "armv7",
+        "image": "halo_guest_armv7.elf",
+        "host_triple": "armv7a-linux-androideabi",
+        "abi_flags": ARMV7_GUEST_ABI_FLAGS,
+        "compile": _armv7_compile,
+        "tools": [],
+        "assembler_target": "--target=armv7a-unknown-linux-musleabi -mfloat-abi=softfp -marm",
+        "imports_arch": "arm",
+        "emulation": "armelf_linux_eabi",
+    },
+}
 
 # as the Linux build (tools/linux_build.py), minus what only x86 needs
 GUEST_CODE_FLAGS = [
@@ -283,32 +352,74 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         _host_tag = _tags[0]
     toolchain = prebuilt / _host_tag
     sysroot_include = toolchain / "sysroot" / "usr" / "include"
-    host_cc = toolchain / "bin" / f"aarch64-linux-android{ANDROID_API}-clang"
     ndk_bin = toolchain / "bin"
     guest_cc = getattr(sln, "android_guest_cc", None) or "clang"
 
-    guest_dir = BUILD / "guest"
+    n.comment("Android build (ninja android); see port/android/README.md")
+    n.variable("android_guest_cc", guest_cc)
+    n.variable("android_ndk_bin", str(ndk_bin))
+
+    abis = list(getattr(sln, "android_abis", None) or ["arm64-v8a"])
+    staged: List[Path] = []
+    for abi in abis:
+        staged += _generate_abi(n, sln, abi, ndk, toolchain, sysroot_include, config)
+    # internet play's MQTT brokers, in the APK: the app writes them beside
+    # config.toml (port/android/host/host_main.c)
+    staged_brokers = BUILD / "assets" / "brokers.txt"
+    n.rule(name="android_stage_brokers", command="cp $in $out", description="ANDROID STAGE $out")
+    n.build(outputs=staged_brokers, rule="android_stage_brokers", inputs=Path("port/assets/network/brokers.txt"))
+    staged.append(staged_brokers)
+    n.build(outputs="android", rule="phony", inputs=staged)
+
+    apk = PORT_DIR / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+    sdl_android_mouse_listener = SDL_DIR / SDL_ANDROID_MOUSE_LISTENER
+    n.rule(
+        name="android_gradle",
+        # Gradle leaves the APK alone when its contents would not change
+        command=(f"cd {PORT_DIR} && ./gradlew --console=plain -q -Phalo.abis={','.join(abis)} assembleDebug && "
+                 "touch app/build/outputs/apk/debug/app-debug.apk"),
+        description="ANDROID GRADLE $out",
+        pool="console",
+    )
+    n.build(outputs=apk, rule="android_gradle", inputs=staged, implicit=[sdl_android_mouse_listener])
+    n.build(outputs="android_apk", rule="phony", inputs=apk)
+    n.newline()
+
+
+def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sysroot_include: Path,
+                  config: Dict[str, Any]) -> List[Path]:
+    """The guest image, SDL3 and the host library for one Android ABI
+    (ANDROID_ABIS); returns the files staged for Gradle."""
+    spec = ANDROID_ABIS[abi]
+    p = spec["prefix"]
+    root = spec["build"]
+    host_cc = toolchain / "bin" / f"{spec['host_triple']}{ANDROID_API}-clang"
+    ndk_bin = toolchain / "bin"
+    guest_cc = getattr(sln, "android_guest_cc", None) or "clang"
+    n.variable(f"{p}_host_cc", str(host_cc))
+
+
+    guest_dir = root / "guest"
     obj_dir = guest_dir / "obj"
     gen_dir = guest_dir / "gen"
     libc_include = guest_dir / "libc_include"
     libc_internal = guest_dir / "libc_internal"
     gl_include = guest_dir / "gl_include"
+    # (both ABIs: the guest's system calls are AArch64's, whatever the code,
+    # and the host translates them: port/android/host/host_syscall.c)
     arch = PORT_DIR / "guest" / "libc" / "arch" / "arm64_32"
     semantics_header = Path("build/linux/halo_msvc_semantics.h")
     platform_semantics_header = Path("build/linux/platform_msvc_semantics.h")
     prefix_header = LINUX_DIR / "include" / "halo_linux_prefix.h"
-    image = BUILD / "halo_guest.elf"
-    sdl_build = BUILD / "sdl3-build"
+    image = root / spec["image"]
+    sdl_build = root / "sdl3-build"
     libsdl = sdl_build / "libSDL3.so"
-    jni_dir = BUILD / "jniLibs" / "arm64-v8a"
+    jni_dir = BUILD / "jniLibs" / abi
     libmain = jni_dir / "libmain.so"
     assets_dir = BUILD / "assets"
     python = "$python"
 
-    n.comment("Android build (ninja android); see port/android/README.md")
-    n.variable("android_guest_cc", guest_cc)
-    n.variable("android_host_cc", str(host_cc))
-    n.variable("android_ndk_bin", str(ndk_bin))
+    n.comment(f"Android build for {abi}")
 
     # ---------- generated headers and sources
 
@@ -316,66 +427,66 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     syscall_h = libc_include / "bits" / "syscall.h"
     version_h = libc_internal / "version.h"
     n.rule(
-        name="android_alltypes",
+        name=f"{p}_alltypes",
         command=f"sed -f {MUSL_DIR}/tools/mkalltypes.sed $in > $out",
         description="ANDROID MUSL $out",
     )
-    n.build(outputs=alltypes, rule="android_alltypes",
+    n.build(outputs=alltypes, rule=f"{p}_alltypes",
             inputs=[arch / "bits" / "alltypes.h.in", MUSL_DIR / "include" / "alltypes.h.in"])
     n.rule(
-        name="android_syscall_h",
+        name=f"{p}_syscall_h",
         command="cp $in $out && sed -n -e s/__NR_/SYS_/p < $in >> $out",
         description="ANDROID MUSL $out",
     )
-    n.build(outputs=syscall_h, rule="android_syscall_h", inputs=arch / "bits" / "syscall.h.in")
+    n.build(outputs=syscall_h, rule=f"{p}_syscall_h", inputs=arch / "bits" / "syscall.h.in")
     n.rule(
-        name="android_version_h",
+        name=f"{p}_version_h",
         command=f"echo '#define VERSION \"{MUSL_VERSION}\"' > $out",
         description="ANDROID MUSL $out",
     )
-    n.build(outputs=version_h, rule="android_version_h")
+    n.build(outputs=version_h, rule=f"{p}_version_h")
 
     # the NDK's OpenGL ES headers (C declarations only) for the guest
     gl_stamp = gl_include / "stamp"
     n.rule(
-        name="android_gl_include",
+        name=f"{p}_gl_include",
         command=(f"mkdir -p {gl_include} && ln -sfn {sysroot_include}/GLES2 {gl_include}/GLES2 && "
                  f"ln -sfn {sysroot_include}/GLES3 {gl_include}/GLES3 && "
                  f"ln -sfn {sysroot_include}/KHR {gl_include}/KHR && touch $out"),
         description="ANDROID GL HEADERS",
     )
-    n.build(outputs=gl_stamp, rule="android_gl_include")
+    n.build(outputs=gl_stamp, rule=f"{p}_gl_include")
 
     guest_gl_c = gen_dir / "guest_gl.c"
     gl_imports = gen_dir / "gl_imports.list"
     n.rule(
-        name="android_gl_stubs",
+        name=f"{p}_gl_stubs",
         command=(f"{python} tools/android_gl_stubs.py {LINUX_DIR}/src/gl.h {sysroot_include}/GLES3/gl32.h "
                  f"{sysroot_include}/GLES2/gl2ext.h {guest_gl_c} {gl_imports}"),
         description="ANDROID GL STUBS",
     )
-    n.build(outputs=[guest_gl_c, gl_imports], rule="android_gl_stubs",
+    n.build(outputs=[guest_gl_c, gl_imports], rule=f"{p}_gl_stubs",
             implicit=[Path("tools/android_gl_stubs.py"), LINUX_DIR / "src" / "gl.h"])
 
     guest_posix_c = gen_dir / "guest_posix.c"
     posix_imports = gen_dir / "posix_imports.list"
     n.rule(
-        name="android_posix_stubs",
+        name=f"{p}_posix_stubs",
         command=f"{python} tools/android_posix_stubs.py {LINUX_DIR}/src/posix.h {guest_posix_c} {posix_imports}",
         description="ANDROID POSIX STUBS",
     )
-    n.build(outputs=[guest_posix_c, posix_imports], rule="android_posix_stubs",
+    n.build(outputs=[guest_posix_c, posix_imports], rule=f"{p}_posix_stubs",
             implicit=[Path("tools/android_posix_stubs.py"), LINUX_DIR / "src" / "posix.h"])
 
     imports_s = gen_dir / "imports.s"
-    host_table_c = BUILD / "host" / "host_import_table.c"
+    host_table_c = root / "host" / "host_import_table.c"
     host_imports_list = PORT_DIR / "host_imports.list"
     n.rule(
-        name="android_imports",
-        command=f"{python} tools/android_imports.py --host-table {host_table_c} {imports_s} $in",
+        name=f"{p}_imports",
+        command=f"{python} tools/android_imports.py --arch {spec['imports_arch']} --host-table {host_table_c} {imports_s} $in",
         description="ANDROID IMPORTS",
     )
-    n.build(outputs=[imports_s, host_table_c], rule="android_imports",
+    n.build(outputs=[imports_s, host_table_c], rule=f"{p}_imports",
             inputs=[host_imports_list, posix_imports, gl_imports],
             implicit=[Path("tools/android_imports.py")])
 
@@ -385,17 +496,15 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     # ---------- guest compilation: C -> Darwin assembly -> ELF assembly -> object
 
     n.rule(
-        name="android_guest_cc",
-        command=(f"{compile_launcher(sln)}$android_guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
-                 f"{python} tools/android_asm_convert.py $out.darwin.s $out.s && "
-                 f"$android_guest_cc --target=aarch64-linux-android -c $out.s -o $out"),
+        name=f"{p}_guest_cc",
+        command=spec["compile"](compile_launcher(sln), python),
         description="ANDROID CC $out",
         depfile="$out.d",
         deps="gcc",
     )
     n.rule(
-        name="android_guest_as",
-        command="$android_guest_cc --target=aarch64-linux-android -c $in -o $out",
+        name=f"{p}_guest_as",
+        command=f"$android_guest_cc {spec['assembler_target']} -c $in -o $out",
         description="ANDROID AS $out",
     )
 
@@ -403,9 +512,9 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         f"-isystem {libc_include}", f"-isystem {arch}", f"-isystem {MUSL_DIR}/arch/generic",
         f"-isystem {MUSL_DIR}/include",
     ]
-    guest_abi = " ".join(GUEST_ABI_FLAGS + configuration_defines(sln))
+    guest_abi = " ".join(spec["abi_flags"] + configuration_defines(sln))
     guest_code = " ".join(GUEST_CODE_FLAGS)
-    tool_implicit = [Path("tools/android_asm_convert.py"), *generated_headers]
+    tool_implicit = [*spec["tools"], *generated_headers]
     # profile-guided optimisation with the Linux build's profile (committed,
     # or trained by the Linux build with --pgo=train): the game and platform
     # code are the same, and functions that differ simply go without
@@ -416,9 +525,9 @@ def generate_android_build(n: Writer, sln: Any) -> None:
 
     def guest_object(source: Path, cflags: str, prefix: str = "") -> Path:
         obj = obj_dir / prefix / Path(str(source).lstrip("/")).with_suffix(".o")
-        if str(source).startswith(str(BUILD)):
-            obj = obj_dir / prefix / source.relative_to(BUILD).with_suffix(".o")
-        n.build(outputs=obj, rule="android_guest_cc", inputs=source, implicit=tool_implicit,
+        if str(source).startswith(str(root)):
+            obj = obj_dir / prefix / source.relative_to(root).with_suffix(".o")
+        n.build(outputs=obj, rule=f"{p}_guest_cc", inputs=source, implicit=tool_implicit,
                 variables={"cflags": cflags})
         return obj
 
@@ -432,13 +541,13 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     musl_objects = [guest_object(source, musl_cflags, "musl") for source in _musl_sources()]
     libguestc = guest_dir / "libguestc.a"
     n.rule(
-        name="android_ar",
+        name=f"{p}_ar",
         command="rm -f $out && $android_ndk_bin/llvm-ar rcs $out @$out.rsp",
         description="ANDROID AR $out",
         rspfile="$out.rsp",
         rspfile_content="$in_newline",
     )
-    n.build(outputs=libguestc, rule="android_ar", inputs=musl_objects)
+    n.build(outputs=libguestc, rule=f"{p}_ar", inputs=musl_objects)
 
     # the game
     objects: List[Path] = []
@@ -486,7 +595,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
             continue
         objects.append(guest_object(source, platform_cflags))
     # the high-res HUD's textures (port/assets/hud; port/linux/src/hud_hires.c)
-    for source in hud_assets_build(n, "android", gen_dir / "hud_hires_assets.c"):
+    for source in hud_assets_build(n, p, gen_dir / "hud_hires_assets.c"):
         objects.append(guest_object(source, platform_cflags))
     # the settings file's parser (port/third_party/tomlc17)
     objects.append(guest_object(TOML_DIR / "tomlc17.c", platform_cflags))
@@ -540,30 +649,30 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     objects.append(guest_object(guest_gl_c, runtime_cflags))
     objects.append(guest_object(guest_posix_c, runtime_cflags))
     imports_o = obj_dir / "gen" / "imports.o"
-    n.build(outputs=imports_o, rule="android_guest_as", inputs=imports_s)
+    n.build(outputs=imports_o, rule=f"{p}_guest_as", inputs=imports_s)
     objects.append(imports_o)
 
     # ---------- the guest image
 
     linker_script = PORT_DIR / "guest" / "guest.ld"
     n.rule(
-        name="android_guest_link",
-        command=(f"$android_ndk_bin/ld.lld -m aarch64linux -static -nostdlib -T {linker_script} "
+        name=f"{p}_guest_link",
+        command=(f"$android_ndk_bin/ld.lld -m {spec['emulation']} -static -nostdlib -T {linker_script} "
                  f"-Map $out.map -o $out @$out.rsp {libguestc} "
-                 "$$($android_host_cc -print-libgcc-file-name)"),
+                 "$$(${p}_host_cc -print-libgcc-file-name)"),
         description="ANDROID LINK $out",
         rspfile="$out.rsp",
         rspfile_content="$in_newline",
     )
-    n.build(outputs=image, rule="android_guest_link", inputs=objects, implicit=[libguestc, linker_script])
+    n.build(outputs=image, rule=f"{p}_guest_link", inputs=objects, implicit=[libguestc, linker_script])
 
     # ---------- SDL3
 
     n.rule(
-        name="android_sdl3",
+        name=f"{p}_sdl3",
         command=(f"cmake -S {SDL_DIR} -B {sdl_build} -G Ninja "
                  f"-DCMAKE_TOOLCHAIN_FILE={ndk}/build/cmake/android.toolchain.cmake "
-                 f"-DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-{ANDROID_API} -DCMAKE_BUILD_TYPE=Release "
+                 f"-DANDROID_ABI={abi} -DANDROID_PLATFORM=android-{ANDROID_API} -DCMAKE_BUILD_TYPE=Release "
                  f"-DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF "
                  # 16 KB pages (Android 15 and later), as the host library
                  f"-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 "
@@ -571,15 +680,15 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         description="ANDROID SDL3",
         pool="console",
     )
-    n.build(outputs=libsdl, rule="android_sdl3", implicit=[SDL_DIR / "CMakeLists.txt"])
+    n.build(outputs=libsdl, rule=f"{p}_sdl3", implicit=[SDL_DIR / "CMakeLists.txt"])
 
     # ---------- the host library
 
     host_objects: List[Path] = []
-    host_obj_dir = BUILD / "host" / "obj"
+    host_obj_dir = root / "host" / "obj"
     n.rule(
-        name="android_host_cc",
-        command="$android_host_cc -MMD -MF $out.d $cflags -c $in -o $out",
+        name=f"{p}_host_cc",
+        command="${p}_host_cc -MMD -MF $out.d $cflags -c $in -o $out",
         description="ANDROID HOST CC $out",
         depfile="$out.d",
         deps="gcc",
@@ -596,7 +705,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     ]
     for source in host_sources:
         obj = host_obj_dir / (source.name + ".o")
-        n.build(outputs=obj, rule="android_host_cc", inputs=source, variables={"cflags": host_cflags})
+        n.build(outputs=obj, rule=f"{p}_host_cc", inputs=source, variables={"cflags": host_cflags})
         host_objects.append(obj)
     # internet play's UPnP (posix_upnp.c, with port/third_party/miniupnpc),
     # as the other posix_*.c in the host
@@ -605,7 +714,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     for source in [LINUX_DIR / "src" / "posix_upnp.c", *miniupnpc_sources()]:
         obj = host_obj_dir / ("miniupnpc_" + source.name + ".o" if source.parent.parent == MINIUPNPC_DIR
                               else source.name + ".o")
-        n.build(outputs=obj, rule="android_host_cc", inputs=source,
+        n.build(outputs=obj, rule=f"{p}_host_cc", inputs=source,
                 variables={"cflags": miniupnpc_cflags + (" -w" if source.name != "posix_upnp.c" else "")})
         host_objects.append(obj)
     # internet play's DTLS with browsers (posix_dtls.c, with
@@ -620,45 +729,26 @@ def generate_android_build(n: Writer, sln: Any) -> None:
                    *sorted((MBEDTLS_DIR / "library").glob("*.c"))]:
         obj = host_obj_dir / ("mbedtls_" + source.name + ".o" if source.parent.parent == MBEDTLS_DIR
                               else source.name + ".o")
-        n.build(outputs=obj, rule="android_host_cc", inputs=source,
+        n.build(outputs=obj, rule=f"{p}_host_cc", inputs=source,
                 variables={"cflags": mbedtls_cflags + (" -w" if source.parent.parent == MBEDTLS_DIR else "")})
         host_objects.append(obj)
     table_obj = host_obj_dir / "host_import_table.c.o"
-    n.build(outputs=table_obj, rule="android_host_cc", inputs=host_table_c, variables={"cflags": host_cflags})
+    n.build(outputs=table_obj, rule=f"{p}_host_cc", inputs=host_table_c, variables={"cflags": host_cflags})
     host_objects.append(table_obj)
     n.rule(
-        name="android_host_link",
-        command=(f"$android_host_cc -shared -o $out $in -L{sdl_build} "
+        name=f"{p}_host_link",
+        command=(f"${p}_host_cc -shared -o $out $in -L{sdl_build} "
                  + " ".join(f"-l{lib}" for lib in HOST_LIBRARIES)
                  + " -Wl,-z,max-page-size=16384 -Wl,--no-undefined"),
         description="ANDROID HOST LINK $out",
     )
-    n.build(outputs=libmain, rule="android_host_link", inputs=host_objects, implicit=[libsdl])
+    n.build(outputs=libmain, rule=f"{p}_host_link", inputs=host_objects, implicit=[libsdl])
 
     # ---------- staging for Gradle
 
     staged_sdl = jni_dir / "libSDL3.so"
-    staged_image = assets_dir / "halo_guest.elf"
-    n.rule(name="android_copy", command="cp $in $out", description="ANDROID STAGE $out")
-    n.build(outputs=staged_sdl, rule="android_copy", inputs=libsdl)
-    n.build(outputs=staged_image, rule="android_copy", inputs=image)
-    # internet play's MQTT brokers, in the APK: the app writes them beside
-    # config.toml (port/android/host/host_main.c)
-    staged_brokers = assets_dir / "brokers.txt"
-    n.build(outputs=staged_brokers, rule="android_copy", inputs=Path("port/assets/network/brokers.txt"))
-    n.build(outputs="android", rule="phony", inputs=[libmain, staged_sdl, staged_image, staged_brokers])
-
-    apk = PORT_DIR / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
-    sdl_android_mouse_listener = SDL_DIR / SDL_ANDROID_MOUSE_LISTENER
-    n.rule(
-        name="android_gradle",
-        # Gradle leaves the APK alone when its contents would not change
-        command=(f"cd {PORT_DIR} && ./gradlew --console=plain -q assembleDebug && "
-                 "touch app/build/outputs/apk/debug/app-debug.apk"),
-        description="ANDROID GRADLE $out",
-        pool="console",
-    )
-    n.build(outputs=apk, rule="android_gradle", inputs=[libmain, staged_sdl, staged_image, staged_brokers],
-            implicit=[sdl_android_mouse_listener])
-    n.build(outputs="android_apk", rule="phony", inputs=apk)
-    n.newline()
+    staged_image = assets_dir / spec["image"]
+    n.rule(name=f"{p}_copy", command="cp $in $out", description="ANDROID STAGE $out")
+    n.build(outputs=staged_sdl, rule=f"{p}_copy", inputs=libsdl)
+    n.build(outputs=staged_image, rule=f"{p}_copy", inputs=image)
+    return [libmain, staged_sdl, staged_image]

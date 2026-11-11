@@ -31,7 +31,13 @@ void __guest_thread_initialize_main(void);
 
 extern char **__environ;
 
+/* (Mach-O's name for the AArch64 guest, whose assembly is converted:
+tools/android_asm_convert.py; ELF's for the 32-bit ARM guest) */
+#ifdef HALO_ARM64_GUEST
 __attribute__((section("__TEXT,__guest_header"), used))
+#else
+__attribute__((section(".guest_header"), used))
+#endif
 const struct halo_guest_header __guest_header =
 {
 	HALO_GUEST_MAGIC,

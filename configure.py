@@ -90,6 +90,13 @@ parser.add_argument(
     help="clang with the arm64_32 target for the Android guest (default: clang)",
 )
 parser.add_argument(
+    "--android-abis",
+    type=str,
+    default="arm64-v8a",
+    help="the Android ABIs `ninja android` builds, comma-separated: arm64-v8a (the default), "
+    "armeabi-v7a (32-bit Android, such as many Android TV devices), or both",
+)
+parser.add_argument(
     "--web-emcc",
     type=str,
     help="Emscripten's emcc for `ninja web` (default: emcc on the PATH, then EMSDK's or ~/emsdk's)",
@@ -127,6 +134,9 @@ if not is_windows():
     )
 
 args = parser.parse_args()
+for _abi in args.android_abis.split(","):
+    if _abi.strip() and _abi.strip() not in ("arm64-v8a", "armeabi-v7a"):
+        parser.error(f"--android-abis: unknown ABI {_abi.strip()} (arm64-v8a, armeabi-v7a)")
 try:
     check_profile_options(args.profile, args.pgo)
 except ValueError as error:
@@ -145,6 +155,7 @@ sln = SimpleNamespace(
     port_pgo_profile=args.pgo_profile,
     android_ndk=args.android_ndk,
     android_guest_cc=args.android_guest_cc,
+    android_abis=[abi.strip() for abi in args.android_abis.split(",") if abi.strip()],
     web_emcc=args.web_emcc,
 )
 if not is_windows():

@@ -295,10 +295,22 @@ static unsigned short msvc_to_control_word(unsigned int value, unsigned short wo
 	return word;
 }
 
-#ifdef HALO_ARM64_GUEST
+#if defined(HALO_ARM64_GUEST) || defined(HALO_ARM32_GUEST)
 /* AArch64: the rounding mode lives in FPCR.RMode, the sticky exception
 flags in FPSR. Precision control and exception unmasking have no
-equivalent; the rest of the MSVC control word is only remembered. */
+equivalent; the rest of the MSVC control word is only remembered.
+32-bit ARM keeps both in FPSCR, at the same bits. */
+#ifdef HALO_ARM32_GUEST
+#define arm_fpcr_read() ((unsigned long long)__builtin_arm_get_fpscr())
+#define arm_fpcr_write(value) __builtin_arm_set_fpscr((unsigned int)(value))
+#define arm_fpsr_read() ((unsigned long long)__builtin_arm_get_fpscr())
+#define arm_fpsr_write(value) __builtin_arm_set_fpscr((unsigned int)(value))
+#else
+#define arm_fpcr_read() __builtin_arm_rsr64("fpcr")
+#define arm_fpcr_write(value) __builtin_arm_wsr64("fpcr", (value))
+#define arm_fpsr_read() __builtin_arm_rsr64("fpsr")
+#define arm_fpsr_write(value) __builtin_arm_wsr64("fpsr", (value))
+#endif
 static unsigned int msvc_control_word = CW_DEFAULT;
 
 unsigned int _control87(unsigned int new_value, unsigned int mask)
@@ -308,7 +320,7 @@ unsigned int _control87(unsigned int new_value, unsigned int mask)
 	if (mask)
 	{
 		msvc_control_word = (msvc_control_word & ~mask) | (new_value & mask);
-		fpcr = __builtin_arm_rsr64("fpcr");
+		fpcr = arm_fpcr_read();
 		fpcr &= ~(3ULL << 22);
 		switch (msvc_control_word & _MCW_RC)
 		{
@@ -317,7 +329,7 @@ unsigned int _control87(unsigned int new_value, unsigned int mask)
 		case _RC_CHOP: fpcr |= 3ULL << 22; break;
 		default: break;
 		}
-		__builtin_arm_wsr64("fpcr", fpcr);
+		arm_fpcr_write(fpcr);
 	}
 	return msvc_control_word;
 }
@@ -330,7 +342,7 @@ unsigned int _controlfp(unsigned int new_value, unsigned int mask)
 
 unsigned int _statusfp(void)
 {
-	unsigned long long fpsr = __builtin_arm_rsr64("fpsr");
+	unsigned long long fpsr = arm_fpsr_read();
 	unsigned int result = 0;
 
 	/* as the x87 status word's low bits: invalid, denormal, zero divide,
@@ -348,7 +360,7 @@ unsigned int _clearfp(void)
 {
 	unsigned int status = _statusfp();
 
-	__builtin_arm_wsr64("fpsr", __builtin_arm_rsr64("fpsr") & ~0x9fULL);
+	arm_fpsr_write(arm_fpsr_read() & ~0x9fULL);
 	return status;
 }
 #elif defined(HALO_WEB)
