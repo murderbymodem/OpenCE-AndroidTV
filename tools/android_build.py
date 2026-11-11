@@ -465,7 +465,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     gl_imports = gen_dir / "gl_imports.list"
     n.rule(
         name=f"{p}_gl_stubs",
-        command=(f"{python} tools/android_gl_stubs.py {LINUX_DIR}/src/gl.h {sysroot_include}/GLES3/gl32.h "
+        command=(f"{python} tools/android_gl_stubs.py --arch {spec['imports_arch']} {LINUX_DIR}/src/gl.h {sysroot_include}/GLES3/gl32.h "
                  f"{sysroot_include}/GLES2/gl2ext.h {guest_gl_c} {gl_imports}"),
         description="ANDROID GL STUBS",
     )

@@ -16,7 +16,11 @@ guest wrapper that widens such arguments and calls an import named
 hostgl_<function>, which the host resolves to the real entry point. Functions
 returning a string go through host_gl_get_string instead.
 
-Usage: android_gl_stubs.py gl.h gl32.h gl2ext.h output.c imports.list
+The 32-bit ARM guest (armeabi-v7a, --arch arm) and its 32-bit host have
+the same calling convention and the same types, so its wrappers pass every
+argument as it is, the shader sources' pointers too.
+
+Usage: android_gl_stubs.py [--arch arm64|arm] gl.h gl32.h gl2ext.h output.c imports.list
 """
 
 import re
@@ -55,7 +59,13 @@ def split_parameter(param: str):
 
 
 def main():
-    gl_header, gl32, gl2ext, output, imports = sys.argv[1:6]
+    arguments = sys.argv[1:]
+    arch = "arm64"
+    if arguments[0] == "--arch":
+        arch = arguments[1]
+        arguments = arguments[2:]
+    gl_header, gl32, gl2ext, output, imports = arguments[:5]
+    same_abi = arch == "arm"
     functions = android_functions(gl_header)
     protos = prototypes(gl32, gl2ext)
     out = [
@@ -92,7 +102,7 @@ def main():
             ]
             table.append(name)
             continue
-        if name == "glShaderSource":
+        if name == "glShaderSource" and not same_abi:
             # an array of pointers: widen each to a host pointer
             import_names.append("hostgl_glShaderSource")
             out += [
@@ -116,7 +126,7 @@ def main():
             continue
         if "*" in ret:
             raise SystemExit(f"{name}: returns a pointer; add a special case")
-        if any(p.count("*") > 1 for p, _ in plist):
+        if any(p.count("*") > 1 for p, _ in plist) and not same_abi:
             raise SystemExit(f"{name}: takes an array of pointers; add a special case")
         decl_params, host_params, call_args = [], [], []
         integer_index = 0
@@ -125,6 +135,10 @@ def main():
             decl_params.append(f"{ptype} {arg}")
             is_pointer = "*" in ptype
             base = ptype.replace("const", "").strip()
+            if same_abi:
+                host_params.append(ptype)
+                call_args.append(arg)
+                continue
             if base in FLOAT_TYPES and not is_pointer:
                 host_params.append(ptype)
                 call_args.append(arg)
