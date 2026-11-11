@@ -113,6 +113,11 @@ ARMV7_GUEST_ABI_FLAGS = [
     "-mfpu=neon",
     "-mfloat-abi=softfp",
     "-marm",
+    # plain char signed, as on x86 and in the AArch64 guest (Apple's ABI): the
+    # game keeps NONE (-1) in char fields (units.h's seat indices, among
+    # others) and compares them with it, which 32-bit ARM's unsigned char
+    # turns into 255
+    "-fsigned-char",
     "-fno-pic",
     "-fno-pie",
     "-D__linux__=1",
