@@ -35,6 +35,12 @@
         android:hardwareAccelerated="true"
         android:enableOnBackInvokedCallback="false">
 
+        <!-- simpleperf from adb (adb shell simpleperf record --app
+             com.halo.decomp) may profile the release app as it does a
+             debuggable one: nothing else can, and the app runs the same;
+             Android 9 does without it -->
+        <profileable android:shell="true" />
+
         <!-- a game, for the system (isGame and appCategory above; the game
              modes' configuration) and for launchers that look for this -->
         <meta-data

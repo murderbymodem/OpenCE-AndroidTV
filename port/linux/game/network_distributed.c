@@ -4716,9 +4716,24 @@ void network_distributed_handle_message(
 	word size)
 {
 	struct distributed_message_header header;
-	void const *entries = (byte const *)message + sizeof(header);
+	void const *entries;
 	short index;
 	word entry_size;
+
+#ifdef HALO_ARM32_GUEST
+	/* (a datagram's messages lie 2 bytes apart, and their handlers read the
+	floats and 8-byte values of their entries where they lie, which 32-bit
+	ARM stops at unless at a multiple of 4: halo_linux_prefix.h,
+	HALO_UNALIGNED. A message there is handled from an aligned copy.) */
+	if ((unsigned long)message & 3)
+	{
+		long *aligned = (long *)__builtin_alloca(((unsigned long)size + 3) & ~3UL);
+
+		csmemcpy(aligned, message, size);
+		message = (word const *)aligned;
+	}
+#endif
+	entries = (byte const *)message + sizeof(header);
 
 	/* (voice chat's, in the lobby too: network_voice.c) */
 	if (network_aim_assist_handles_message(message, size))
