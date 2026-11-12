@@ -14,6 +14,21 @@ byte-for-byte identical to what the matching MSVC build compiles.
 #error the Linux port targets 32-bit x86: game data structures assume 32-bit pointers
 #endif
 
+/* ---------- data that may lie at any address
+
+A typedef of a type with HALO_UNALIGNED is the same type at an alignment of
+1: the compiler loads and stores it in pieces that may lie anywhere. 32-bit
+ARM (the Android armeabi-v7a guest) stops a program at floating-point,
+double-word and multiple loads of an address that is not a multiple of 4,
+where x86 and AArch64 do not (port/android/host/host_alignment.c performs
+them, at the cost of a signal each); elsewhere it is nothing. */
+
+#ifdef HALO_ARM32_GUEST
+#define HALO_UNALIGNED __attribute__((aligned(1)))
+#else
+#define HALO_UNALIGNED
+#endif
+
 /* ---------- WebAssembly: no return addresses
 
 WebAssembly code has no address to return to: Emscripten makes one up by

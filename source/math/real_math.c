@@ -225,9 +225,14 @@ void points_interpolate(
 	real_point3d *result)
 {
 	real one_minus_t = 1-t;
-	result->x = one_minus_t*a->x + t*b->x;
-	result->y = one_minus_t*a->y + t*b->y;
-	result->z = one_minus_t*a->z + t*b->z;
+	/* port: the animations interpolate the points of their packed frame data
+	(model_animations.c), read as they lie (HALO_UNALIGNED) */
+	typedef real_point3d HALO_UNALIGNED unaligned_point3d;
+	unaligned_point3d const *point_a = (unaligned_point3d const *)a;
+	unaligned_point3d const *point_b = (unaligned_point3d const *)b;
+	result->x = one_minus_t*point_a->x + t*point_b->x;
+	result->y = one_minus_t*point_a->y + t*point_b->y;
+	result->z = one_minus_t*point_a->z + t*point_b->z;
 	return;
 }
 

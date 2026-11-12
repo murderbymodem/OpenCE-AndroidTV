@@ -332,6 +332,14 @@ static void animation_set_rest_orientations(
 	struct real_orientation *node_orientations,
 	short node_count);
 
+/* port: an animation's frame data and its compressed arrays are packed with
+2-byte alignment, and its readers take each value at its address: through
+these types, which 32-bit ARM loads at any address (HALO_UNALIGNED,
+halo_linux_prefix.h), and which are the types themselves elsewhere */
+typedef real_point3d HALO_UNALIGNED animation_unaligned_point3d;
+typedef real HALO_UNALIGNED animation_unaligned_real;
+typedef struct compressed_quaternion_8byte HALO_UNALIGNED animation_unaligned_quaternion_8byte;
+
 /* ---------- globals */
 
 boolean hs_model_animation_compression_enabled = TRUE;
@@ -932,7 +940,7 @@ void animation_get_node_orientations(
 				}
 				else
 				{
-					orientation->translation = *(real_point3d *)data;
+					orientation->translation = *(animation_unaligned_point3d *)data;
 					data += sizeof(real_point3d);
 				}
 			}
@@ -949,7 +957,7 @@ void animation_get_node_orientations(
 					1,
 					sizeof(real_point3d)))
 				{
-					orientation->translation = *((real_point3d *)(data+header->default_translations_offset)+node_index);
+					orientation->translation = *((animation_unaligned_point3d *)(data+header->default_translations_offset)+node_index);
 				}
 				else
 				{
@@ -959,7 +967,7 @@ void animation_get_node_orientations(
 			}
 			else
 			{
-				orientation->translation = *(real_point3d *)default_data;
+				orientation->translation = *(animation_unaligned_point3d *)default_data;
 				default_data += sizeof(real_point3d);
 			}
 			translation_flags >>= 1;
@@ -972,7 +980,7 @@ void animation_get_node_orientations(
 				}
 				else
 				{
-					orientation->scale = *(real *)data;
+					orientation->scale = *(animation_unaligned_real *)data;
 					data += sizeof(real);
 				}
 			}
@@ -982,7 +990,7 @@ void animation_get_node_orientations(
 			}
 			else
 			{
-				orientation->scale = *(real *)default_data;
+				orientation->scale = *(animation_unaligned_real *)default_data;
 				default_data += sizeof(real);
 			}
 			scale_flags >>= 1;
@@ -1068,7 +1076,7 @@ void replacement_animation_apply(
 				}
 				else
 				{
-					orientation->translation = *(real_point3d *)data;
+					orientation->translation = *(animation_unaligned_point3d *)data;
 					data += sizeof(real_point3d);
 				}
 			}
@@ -1082,7 +1090,7 @@ void replacement_animation_apply(
 				}
 				else
 				{
-					orientation->scale = *(real *)data;
+					orientation->scale = *(animation_unaligned_real *)data;
 					data += sizeof(real);
 				}
 			}
@@ -1158,7 +1166,7 @@ void overlay_animation_apply(
 				}
 				else
 				{
-					translation = *(real_point3d *)data;
+					translation = *(animation_unaligned_point3d *)data;
 					data += sizeof(real_point3d);
 				}
 				orientation->translation.x += translation.x;
@@ -1177,7 +1185,7 @@ void overlay_animation_apply(
 				}
 				else
 				{
-					scale = *(real *)data;
+					scale = *(animation_unaligned_real *)data;
 					data += sizeof(real);
 				}
 				orientation->scale *= scale;
@@ -1258,7 +1266,7 @@ void overlay_animation_apply_scaled(
 				}
 				else
 				{
-					translation = *(real_point3d *)data;
+					translation = *(animation_unaligned_point3d *)data;
 					data += sizeof(real_point3d);
 				}
 				orientation->translation.x += translation.x*animation_scale;
@@ -1277,7 +1285,7 @@ void overlay_animation_apply_scaled(
 				}
 				else
 				{
-					scale = *(real *)data;
+					scale = *(animation_unaligned_real *)data;
 					data += sizeof(real);
 				}
 				orientation->scale *= scale*animation_scale+inverse_animation_scale;
@@ -1412,12 +1420,12 @@ void overlay_animation_apply_continuous(
 				}
 				else
 				{
-					real_point3d const *this_translation;
-					real_point3d const *next_translation;
+					animation_unaligned_point3d const *this_translation;
+					animation_unaligned_point3d const *next_translation;
 
-					this_translation = (real_point3d const *)data;
+					this_translation = (animation_unaligned_point3d const *)data;
 					data += sizeof(real_point3d);
-					next_translation = (real_point3d const *)next_data;
+					next_translation = (animation_unaligned_point3d const *)next_data;
 					next_data += sizeof(real_point3d);
 					points_interpolate(
 						this_translation,
@@ -1450,9 +1458,9 @@ void overlay_animation_apply_continuous(
 					real this_scale;
 					real next_scale;
 
-					this_scale = *(real const *)data;
+					this_scale = *(animation_unaligned_real const *)data;
 					data += sizeof(real);
-					next_scale = *(real const *)next_data;
+					next_scale = *(animation_unaligned_real const *)next_data;
 					next_data += sizeof(real);
 					scalars_interpolate(
 						this_scale,
@@ -1686,12 +1694,12 @@ void overlay_animation_apply_continuous_scaled(
 				}
 				else
 				{
-					real_point3d const *this_translation;
-					real_point3d const *next_translation;
+					animation_unaligned_point3d const *this_translation;
+					animation_unaligned_point3d const *next_translation;
 
-					this_translation = (real_point3d const *)data;
+					this_translation = (animation_unaligned_point3d const *)data;
 					data += sizeof(real_point3d);
-					next_translation = (real_point3d const *)next_data;
+					next_translation = (animation_unaligned_point3d const *)next_data;
 					next_data += sizeof(real_point3d);
 					points_interpolate(
 						this_translation,
@@ -1724,9 +1732,9 @@ void overlay_animation_apply_continuous_scaled(
 					real this_scale;
 					real next_scale;
 
-					this_scale = *(real const *)data;
+					this_scale = *(animation_unaligned_real const *)data;
 					data += sizeof(real);
-					next_scale = *(real const *)next_data;
+					next_scale = *(animation_unaligned_real const *)next_data;
 					next_data += sizeof(real);
 					scalars_interpolate(
 						this_scale,
@@ -1946,13 +1954,13 @@ void aiming_screen_apply(
 			}
 			else
 			{
-				translation00 = *(real_point3d const *)data00;
+				translation00 = *(animation_unaligned_point3d const *)data00;
 				data00 += sizeof(real_point3d);
-				translation10 = *(real_point3d const *)data10;
+				translation10 = *(animation_unaligned_point3d const *)data10;
 				data10 += sizeof(real_point3d);
-				translation01 = *(real_point3d const *)data01;
+				translation01 = *(animation_unaligned_point3d const *)data01;
 				data01 += sizeof(real_point3d);
-				translation11 = *(real_point3d const *)data11;
+				translation11 = *(animation_unaligned_point3d const *)data11;
 				data11 += sizeof(real_point3d);
 			}
 
@@ -1977,11 +1985,13 @@ void quaternion_decompress_8byte(
 	real_quaternion *quaternion)
 {
 	real const scale = 1.f / COMPRESSED_QUATERNION_COMPONENT_MAXIMUM;
+	/* port: read where the frame data has it (the unaligned types above) */
+	animation_unaligned_quaternion_8byte const *packed = (animation_unaligned_quaternion_8byte const *)compressed;
 
-	quaternion->v.i = compressed->i * scale;
-	quaternion->v.j = compressed->j * scale;
-	quaternion->v.k = compressed->k * scale;
-	quaternion->w = compressed->w * scale;
+	quaternion->v.i = packed->i * scale;
+	quaternion->v.j = packed->j * scale;
+	quaternion->v.k = packed->k * scale;
+	quaternion->w = packed->w * scale;
 
 	return;
 }
@@ -2295,7 +2305,7 @@ static void animation_get_keyframe_translation(
 {
 	byte *data = tag_data_get_pointer(&animation->data, animation->compressed_data_offset, 0);
 	struct compressed_animation_header const *header = (struct compressed_animation_header const *)data;
-	real_point3d const *default_translations;
+	animation_unaligned_point3d const *default_translations;
 	unsigned long node_header;
 	short first_keyframe_index;
 	short keyframe_count;
@@ -2311,7 +2321,7 @@ static void animation_get_keyframe_translation(
 		*translation = *global_origin3d;
 		return;
 	}
-	default_translations = (real_point3d const *)(data+header->default_translations_offset);
+	default_translations = (animation_unaligned_point3d const *)(data+header->default_translations_offset);
 	node_header = ((unsigned long const *)(data+header->translation_node_headers_offset))[adjusted_node_index];
 	first_keyframe_index = (short)(node_header>>COMPRESSED_ANIMATION_NODE_HEADER_KEYFRAME_COUNT_BITS);
 	keyframe_count = (short)(node_header&(FLAG(COMPRESSED_ANIMATION_NODE_HEADER_KEYFRAME_COUNT_BITS)-1));
@@ -2343,11 +2353,11 @@ static void animation_get_keyframe_translation(
 	}
 	else
 	{
-		real_point3d const *keyframe_translations = (real_point3d const *)(data+header->translation_keyframes_offset)+first_keyframe_index;
+		animation_unaligned_point3d const *keyframe_translations = (animation_unaligned_point3d const *)(data+header->translation_keyframes_offset)+first_keyframe_index;
 		word const *keyframe_frame_indices = (word const *)(data+header->translation_keyframe_frame_indices_offset)+first_keyframe_index;
 		short frame_index = (short)fast_ftol(floor(real_frame_index));
-		real_point3d const *this_keyframe;
-		real_point3d const *next_keyframe;
+		animation_unaligned_point3d const *this_keyframe;
+		animation_unaligned_point3d const *next_keyframe;
 		short this_keyframe_frame_index;
 		short next_keyframe_frame_index;
 
