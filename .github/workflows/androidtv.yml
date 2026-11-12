@@ -16,14 +16,18 @@ name: Android TV (armeabi-v7a)
 # branch are merged into armeabi-v7a, so that this app stays able to play with
 # the main project's (machines of different network versions do not play
 # together: port/linux/include/halo_port_limits.h), and then built. A merge
-# that conflicts is not pushed: an issue says so. GitHub's own token cannot
+# that conflicts is not pushed: the run fails with an error saying so (and
+# opens an issue, where the repository has issues). GitHub's own token cannot
 # push a merge that changes .github/workflows; the SYNC_TOKEN secret, a token
 # with contents and workflows write access to this repository, can, and its
 # pushes start the build themselves.
 #
 # The main project's own workflows (build.yml: every platform, its releases
-# and its web site; server-image.yml) are for it: disable them here (Actions,
-# the workflow, Disable workflow).
+# and its web site; server-image.yml) are for it: they stay in the branch, so
+# that merging the main project's changes to them does not conflict, but are
+# disabled here (Actions, the workflow, Disable workflow). This workflow runs
+# only for armeabi-v7a; main is a mirror of the main project and builds
+# nothing.
 on:
   push:
     branches: [armeabi-v7a]
@@ -74,6 +78,15 @@ jobs:
       - name: Merge the main project's new commits
         id: merge
         run: |
+          # a problem: the run's error (GitHub mails a failed scheduled run),
+          # and an issue where the repository has issues (forks start without)
+          report() {
+            echo "::error title=$1::$(head -n 1 "$2")"
+            if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" = "true" ] &&
+              [ -z "$(gh issue list --state open --search "\"$1\" in:title" --json number --jq '.[].number')" ]; then
+              gh issue create --title "$1" --body-file "$2" || true
+            fi
+          }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream "$UPSTREAM"
@@ -86,22 +99,18 @@ jobs:
           count="$(git rev-list --count "HEAD..upstream/$UPSTREAM_BRANCH")"
           if ! git merge --no-edit -m "Merge the main project's $UPSTREAM_BRANCH ($count new commits)" "upstream/$UPSTREAM_BRANCH"; then
             git merge --abort
-            title="Merging the main project's $UPSTREAM_BRANCH conflicts"
-            if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
-              printf 'The daily sync could not merge %s new commits of %s (%s) into %s: they conflict with this fork'"'"'s changes.\n\nMerge them by hand (git fetch %s %s, git merge FETCH_HEAD, resolve, push), then close this issue.\n\nRun: %s\n' \
-                "$count" "$UPSTREAM" "$UPSTREAM_BRANCH" "$BRANCH" "$UPSTREAM" "$UPSTREAM_BRANCH" \
-                "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > issue.md
-              gh issue create --title "$title" --body-file issue.md
-            fi
+            printf 'The daily sync could not merge %s new commits of %s (%s) into %s: they conflict with this fork'"'"'s changes.\n\nMerge them by hand (git fetch %s %s, git merge FETCH_HEAD, resolve, push).\n\nRun: %s\n' \
+              "$count" "$UPSTREAM" "$UPSTREAM_BRANCH" "$BRANCH" "$UPSTREAM" "$UPSTREAM_BRANCH" \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > issue.md
+            report "Merging the main project's $UPSTREAM_BRANCH conflicts" issue.md
             exit 1
           fi
           if ! git push origin "HEAD:$BRANCH" 2> push.log; then
             cat push.log
-            title="The daily sync cannot push the main project's changes"
-            if grep -q "workflow" push.log && [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            if grep -q "workflow" push.log; then
               printf 'The main project changed its workflows (.github/workflows), which GitHub'"'"'s own token cannot push.\n\nAdd a SYNC_TOKEN secret (a fine-grained token with Contents and Workflows read and write access to this repository), or merge %s %s into %s by hand.\n\nRun: %s\n' \
                 "$UPSTREAM" "$UPSTREAM_BRANCH" "$BRANCH" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > issue.md
-              gh issue create --title "$title" --body-file issue.md
+              report "The daily sync cannot push the main project's changes" issue.md
             fi
             exit 1
           fi

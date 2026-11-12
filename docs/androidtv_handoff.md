@@ -64,6 +64,10 @@ publish from GitHub Actions; the in-app updater installs them.
   `display.object_shadows` (`port/linux/game/object_shadows.c`); default
   false on HALO_ARM32_GUEST, true elsewhere.
 - Streaming vertex buffers 16 MB -> 8 MB on armv7 (saves 24 MB GPU memory).
+- 32-bit app defaults (port_config.c, HALO_ARM32_GUEST): `display.vsync =
+  false`, `display.max_fps = 30` (a steady 30 played better than 30-55 with
+  dips), `display.object_shadows = false`. Every other build keeps upstream's.
+  Video settings' V-SYNC / FRAME RATE LIMIT rows still change them.
 - `debug.gpu_stats` now also logs shader link time and texture upload time.
 - Other diagnostic settings added: `debug.gl_refresh_state`,
   `debug.halo.render_chip` system property (0-3, try another chip policy).
@@ -93,6 +97,12 @@ Multiplayer rule: change nothing in the simulation or network messages; keep
   image workflows are disabled in the fork. Secrets: `ANDROID_KEYSTORE_BASE64`,
   `ANDROID_KEYSTORE_PASSWORD`, optional `SYNC_TOKEN` (fine-grained PAT,
   Contents + Workflows write) for merges that touch workflows.
+- Repository: default branch `armeabi-v7a`; `main` mirrors upstream and
+  builds nothing; Pages off; issues off (the sync reports problems as a failed
+  run's error, and as an issue only if issues are turned on). Upstream's
+  `build.yml` and `server-image.yml` stay in the tree (so merges do not
+  conflict) but are disabled in the Actions settings. Auto-update verified on
+  the device (build 14 -> CI build).
 - The updater (`Updater.java`) checks `BuildConfig.HALO_UPDATE_REPOSITORY`
   (HALO_UPDATE_REPOSITORY, else GITHUB_REPOSITORY, else upstream).
 - Signing key: the user holds `opence-androidtv-signing-key.zip` (keystore,
