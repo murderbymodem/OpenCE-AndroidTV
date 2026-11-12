@@ -188,8 +188,10 @@ jobs:
           CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
           python3 tools/ci_build.py android release 2>&1 | tee build.log
-          if grep -q "building without profile-guided optimisation" build.log; then
-            echo "::warning::built without the profiles in pgo/"
+          # (the guest's compiler only: configure.py also writes the Linux
+          # build's rules, with the runner's own clang)
+          if grep -q "^$CI_ANDROID_GUEST_CC is clang .*building without profile-guided optimisation" build.log; then
+            echo "::warning::the guest was built without the profiles in pgo/"
           fi
 
       - name: Check the app
