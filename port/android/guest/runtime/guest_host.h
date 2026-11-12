@@ -117,6 +117,9 @@ void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int
 the GPU to finish the work last fenced for a slot */
 void host_gl_fence_frame(unsigned int slot);
 void host_gl_wait_frame(unsigned int slot);
+/* the monotonic clock in nanoseconds, for debug.gl_profile
+(guest_gl_profile.c) */
+long long host_gl_clock(void);
 
 /* ---------- Android */
 

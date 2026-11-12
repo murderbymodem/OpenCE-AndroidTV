@@ -2598,6 +2598,9 @@ static void gl_initialize(void)
 	debug_settings.dump_shaders = *config_string("debug.gpu_dump_shaders") ?
 		config_string("debug.gpu_dump_shaders") : NULL;
 	debug_settings.statistics = config_boolean("debug.gpu_stats");
+#ifdef HALO_ARM32_GUEST
+	guest_gl_profile_on = config_boolean("debug.gl_profile");
+#endif
 #ifndef HALO_GLES
 	program_cache_initialize();
 	frame_pacing.limit = config_integer("display.frames_in_flight");
@@ -7979,6 +7982,9 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	}
 	device.frame++;
 	stats.presents++;
+#ifdef HALO_ARM32_GUEST
+	guest_gl_profile_frame();
+#endif
 	if (debug_settings.statistics)
 	{
 		static struct timespec last_present;

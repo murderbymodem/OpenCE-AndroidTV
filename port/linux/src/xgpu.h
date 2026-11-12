@@ -53,6 +53,21 @@ void host_gl_read_buffer(unsigned int buffer, unsigned int offset, unsigned int 
 void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data);
 void host_gl_fence_frame(unsigned int slot);
 void host_gl_wait_frame(unsigned int slot);
+#ifdef HALO_ARM32_GUEST
+/* timed while debug.gl_profile is on (port/android/guest/runtime/guest_gl_profile.c) */
+void guest_gl_profiled_read_buffer(unsigned int buffer, unsigned int offset, unsigned int size, void *data);
+void guest_gl_profiled_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data);
+void guest_gl_profiled_fence_frame(unsigned int slot);
+void guest_gl_profiled_wait_frame(unsigned int slot);
+/* every 120 frames while debug.gl_profile is on: the GL functions that took
+the most time, to the log */
+void guest_gl_profile_frame(void);
+extern int guest_gl_profile_on;
+#define host_gl_read_buffer guest_gl_profiled_read_buffer
+#define host_gl_buffer_write guest_gl_profiled_buffer_write
+#define host_gl_fence_frame guest_gl_profiled_fence_frame
+#define host_gl_wait_frame guest_gl_profiled_wait_frame
+#endif
 #endif
 
 /* ---------- GL state

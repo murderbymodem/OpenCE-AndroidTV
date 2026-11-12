@@ -180,8 +180,24 @@ bool SDL_GL_SetSwapInterval(int interval)
 	return host_sdl_gl_set_swap_interval(interval) != 0;
 }
 
+#ifdef HALO_ARM32_GUEST
+/* debug.gl_profile (guest_gl_profile.c) */
+extern int guest_gl_profile_on;
+void guest_gl_profile_swap(long long start);
+#endif
+
 bool SDL_GL_SwapWindow(SDL_Window *window)
 {
+#ifdef HALO_ARM32_GUEST
+	if (guest_gl_profile_on)
+	{
+		long long start = host_gl_clock();
+		bool result = host_sdl_gl_swap_window((unsigned int)window) != 0;
+
+		guest_gl_profile_swap(start);
+		return result;
+	}
+#endif
 	return host_sdl_gl_swap_window((unsigned int)window) != 0;
 }
 

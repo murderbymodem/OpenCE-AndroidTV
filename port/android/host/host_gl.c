@@ -12,6 +12,7 @@ already have host types by then. Only strings need copying back.
 #include <GLES3/gl32.h>
 #include <dlfcn.h>
 #include <string.h>
+#include <time.h>
 
 void *host_gl_resolve(const char *name)
 {
@@ -134,4 +135,14 @@ void host_gl_buffer_write(uint32_t target, uint32_t offset, uint32_t size, const
 	}
 	memcpy(mapping, data, size);
 	glUnmapBuffer(target);
+}
+
+/* the monotonic clock in nanoseconds (the guest's debug.gl_profile:
+guest/runtime/guest_gl_profile.c) */
+long long host_gl_clock(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (long long)now.tv_sec * 1000000000LL + now.tv_nsec;
 }

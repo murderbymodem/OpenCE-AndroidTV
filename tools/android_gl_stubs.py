@@ -18,7 +18,9 @@ returning a string go through host_gl_get_string instead.
 
 The 32-bit ARM guest (armeabi-v7a, --arch arm) and its 32-bit host have
 the same calling convention and the same types, so its wrappers pass every
-argument as it is, the shader sources' pointers too.
+argument as it is, the shader sources' pointers too. They also count each
+function's calls and the time spent in it while debug.gl_profile is on
+(guest/runtime/guest_gl_profile.c), from guest_gl_profile_names' order.
 
 Usage: android_gl_stubs.py [--arch arm64|arm] gl.h gl32.h gl2ext.h output.c imports.list
 """
@@ -77,6 +79,14 @@ def main():
         "void host_gl_get_string(unsigned int name, int index, char *buffer, unsigned int size);",
         "",
     ]
+    if same_abi:
+        out += [
+            "/* debug.gl_profile (guest/runtime/guest_gl_profile.c) */",
+            "extern int guest_gl_profile_on;",
+            "long long host_gl_clock(void);",
+            "void guest_gl_profile_note(unsigned int index, long long start);",
+            "",
+        ]
     table = []
     import_names = []
     for name in functions:
@@ -165,10 +175,31 @@ def main():
         out.append(f"static {ret} GL_APIENTRY guest_{name}({', '.join(decl_params) or 'void'})")
         out.append("{")
         call = f"{host_name}({', '.join(call_args)})"
+        if same_abi:
+            index = len(table)
+            out.append("\tif (guest_gl_profile_on)")
+            out.append("\t{")
+            out.append("\t\tlong long start = host_gl_clock();")
+            if ret != "void":
+                out.append(f"\t\t{ret} result = {call};")
+                out.append(f"\t\tguest_gl_profile_note({index}, start);")
+                out.append("\t\treturn result;")
+            else:
+                out.append(f"\t\t{call};")
+                out.append(f"\t\tguest_gl_profile_note({index}, start);")
+                out.append("\t\treturn;")
+            out.append("\t}")
         out.append(f"\t{'return ' if ret != 'void' else ''}{call};")
         out.append("}")
         out.append("")
         table.append(name)
+    if same_abi:
+        out.append("const unsigned int guest_gl_profile_count = %d;" % len(table))
+        out.append("const char *const guest_gl_profile_names[] =")
+        out.append("{")
+        out += [f'\t"{name}",' for name in table]
+        out.append("};")
+        out.append("")
     out.append("static const struct { const char *name; void *function; } guest_gl_functions[] =")
     out.append("{")
     for name in table:
