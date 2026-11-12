@@ -113,6 +113,16 @@ before (OpenGL ES drivers' binaries are not all to be trusted) */
 #define SHADER_CACHE_DEFAULT "true"
 #endif
 
+/* audio.hrtf: the Xbox's directional filters, but off in the 32-bit Android
+app: on its TV boxes (a Cortex-A55) they are some 40% of the mixer's work,
+which with many sounds playing takes most of a core and keeps the game's
+thread waiting for the mixer (port/linux/src/dsound_sdl.c, mixer_gate) */
+#ifdef HALO_ARM32_GUEST
+#define AUDIO_HRTF_DEFAULT "false"
+#else
+#define AUDIO_HRTF_DEFAULT "true"
+#endif
+
 /* display.vsync and display.max_fps: the 32-bit Android app's TV boxes draw
 a network game at 30 to 55 frames a second, and a steady 30 (the game's own
 tick rate), paced by max_fps with vsync off, plays better there than the
@@ -397,7 +407,7 @@ static const struct config_setting config_settings[] =
 	{ "audio.channels", _config_string, "\"stereo\"", "HALO_AUDIO_CHANNELS", _environment_value, _platform_desktop,
 		"\"stereo\", \"5.1\" (surround, as the Xbox's Dolby Digital), or \"auto\"\n"
 		"for 5.1 when the sound device has six or more channels." },
-	{ "audio.hrtf", _config_boolean, "true", "HALO_HRTF", _environment_value, _platform_all,
+	{ "audio.hrtf", _config_boolean, AUDIO_HRTF_DEFAULT, "HALO_HRTF", _environment_value, _platform_all,
 		"Use the measured Xbox spatial filters for 3D sounds on stereo and surround outputs." },
 	{ "audio.reverb", _config_boolean, "true", "HALO_REVERB", _environment_value, _platform_all,
 		"Reverberate the world's sounds as the place the player is in does (the\n"
