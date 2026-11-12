@@ -190,6 +190,8 @@ struct nv2a_pixel_shader_key
 	blend of a constant color factor with a constant alpha one, as the
 	meters' (shader_transparent_meter) */
 	unsigned char source_blend;
+	/* MCC environment lightmap pass only; part of the compiled shader key. */
+	unsigned char mcc_bump_attenuation;
 };
 
 char *nv2a_pixel_shader_to_glsl(const struct nv2a_pixel_shader_key *key);
@@ -254,6 +256,15 @@ void xgpu_texture_cache_begin_frame(void);
 /* debug.gpu_stats: a texture uploaded, its bytes and the time its
 conversion and upload took, in microseconds */
 void xgpu_statistics_texture_upload(unsigned long bytes, unsigned long microseconds);
+
+/* MCC-owned immutable resources never enter the guest physical texture cache. */
+BOOL xgpu_mcc_texture_get(DWORD const *resource, D3DCOLOR const *palette,
+	GLuint *texture, GLenum *target, struct xgpu_texture_description *description);
+BOOL xgpu_mcc_texture_describe(DWORD const *resource, struct xgpu_texture_description *description);
+BOOL xgpu_mcc_texture_upload(GLuint texture, GLenum target,
+	struct xgpu_texture_description const *description, void const *pixels,
+	unsigned long bytes, D3DCOLOR const *palette);
+void xgpu_mcc_texture_unbind(DWORD const *resource);
 
 /* ---------- render targets */
 

@@ -375,9 +375,13 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     # internet play's MQTT brokers, in the APK: the app writes them beside
     # config.toml (port/android/host/host_main.c)
     staged_brokers = BUILD / "assets" / "brokers.txt"
-    n.rule(name="android_stage_brokers", command="cp $in $out", description="ANDROID STAGE $out")
-    n.build(outputs=staged_brokers, rule="android_stage_brokers", inputs=Path("port/assets/network/brokers.txt"))
+    n.rule(name="android_stage", command="cp $in $out", description="ANDROID STAGE $out")
+    n.build(outputs=staged_brokers, rule="android_stage", inputs=Path("port/assets/network/brokers.txt"))
     staged.append(staged_brokers)
+    # MCC's texture decoder's notice in the APK as well as the release archive
+    staged_bcdec_license = BUILD / "assets" / "bcdec-LICENSE.txt"
+    n.build(outputs=staged_bcdec_license, rule="android_stage", inputs=Path("port/third_party/bcdec/LICENSE"))
+    staged.append(staged_bcdec_license)
     n.build(outputs="android", rule="phony", inputs=staged)
 
     apk = PORT_DIR / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
@@ -714,6 +718,8 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     ])
     host_sources = sorted((PORT_DIR / "host").glob("*.c")) + [
         LINUX_DIR / "src" / "posix_files.c", LINUX_DIR / "src" / "posix_net.c",
+        LINUX_DIR / "src" / "posix_mcc_preview.c",
+        LINUX_DIR / "src" / "posix_mcc_share.c",
         # the app reads debug.sample_seconds from config.toml (host_main.c)
         TOML_DIR / "tomlc17.c",
     ]
