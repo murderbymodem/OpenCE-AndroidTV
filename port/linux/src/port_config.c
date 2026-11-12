@@ -209,6 +209,11 @@ static const struct config_setting config_settings[] =
 		"Draw the menus' and HUD's text with the fonts in port/assets/fonts\n"
 		"(Overpass) at the resolution the game draws at, and the menus' titles\n"
 		"from port/assets/titles; false draws the maps' bitmap fonts and titles." },
+	{ "display.object_shadows", _config_boolean, "true", "HALO_OBJECT_SHADOWS", _environment_value, _platform_all,
+		"The objects' shadows on the ground. false leaves them out, which saves\n"
+		"the most time of a frame on slow GPUs that draw in tiles (phones and\n"
+		"TV boxes): each object's shadow takes several changes of render\n"
+		"target. Taken up at once." },
 	{ "display.shadow_resolution", _config_integer, "128", "HALO_SHADOW_RESOLUTION", _environment_value,
 		_platform_all,
 		"The size the objects' shadows are drawn at, in pixels each way: 128 as\n"

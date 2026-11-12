@@ -374,6 +374,8 @@ void render_objects(
 
 /* port: port/linux/game/first_person_legs.c */
 boolean first_person_legs_wanted(long object_index);
+/* port: display.object_shadows (port/linux/game/object_shadows.c) */
+int object_shadows_wanted(void);
 real_matrix4x3 const *first_person_legs_node_matrices(long object_index, real_matrix4x3 const *nodes);
 /* port: port/linux/game/shield_color.c */
 real_rgb_color const *shield_color_colors(long unit_index, real_rgb_color const *colors);
@@ -385,7 +387,8 @@ void render_object_shadows(
 {
 	profile_enter(render_object_shadows_section);
 
-	if (render_shadows)
+	/* port: and unless display.object_shadows is off */
+	if (render_shadows && object_shadows_wanted())
 	{
 		struct object_render_data data;
 
