@@ -205,7 +205,7 @@ recording's guest samples are unsymbolized; releases' assets can be.
 If drops remain after this, record again: the next suspects are the Mali
 driver's share of the main thread and the GL thread idea below.
 
-## Turn buttons (branch `claude/androidtv-quick-turn`, not yet tested on the box)
+## 8BitDo controller support: turn buttons (branch `claude/8bitdo-controller-support`, not yet tested on the box)
 
 The user plays with an 8BitDo Ultimate 2 over Bluetooth and wanted its
 back paddles to turn quickly, without anything that would count as a cheat:
