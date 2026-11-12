@@ -151,6 +151,37 @@ there is to gain; nothing in it says where a normal map's drops come from.
 Wanted: the same recording on a stock map during the drops (many players,
 grenades).
 
+## Profiles of stock maps (2026-11-12, build 112): the frame drops are the sound mixer
+
+Two 30 s recordings in normal network games, at the 30 fps limit.
+
+- Main thread: about 50% of a core (Mali driver 26% of that, kernel 7%,
+  `prepare_draw` 4%), and never over 84% in any 100 ms: it is not out of
+  time.
+- The mixer's thread (`mix_voice`): 36% and 52% of a core over the
+  recordings, 76% at the 90th percentile of 100 ms windows and up to 93%.
+  About 40% of it is the HRTF's filters (`audio.hrtf`, on by default since
+  the main project's 176b10c5), 26% the 48-tap sinc resampler: the user's
+  `config.toml` still says `audio.resampler = "sinc"`, the default before
+  176b10c5 (a setting is written to the file with the default of the day it
+  first appears, and later defaults do not replace it).
+- The mix held `mixer_lock` for all of each 1024-frame mix and took it
+  again at once, and the game's thread takes that lock for every sound
+  call: with the mix busy 50-90% of the time, the game waited on it. That
+  fits the drops coming with many players and explosions (many voices).
+
+In the branch: everything but the mix takes the lock through `mixer_gate`,
+which the mix passes before each turn, so a waiting game thread goes first;
+and the 32-bit app's mix takes turns of 128 frames (`MIX_TURN_FRAMES`). The
+sound itself is unchanged (the mixer's harness tests give the same results).
+Not yet run on a device. On the box, also set `audio.resampler = "xbox"`
+(the current default, an eight-tap low pass); `audio.hrtf = false` would
+take another 40% off the mixer at the cost of the Xbox's 3D filters, and
+should not be needed once the lock is fair.
+
+If drops remain after this, record again: the next suspects are the Mali
+driver's share of the main thread and the GL thread idea below.
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
