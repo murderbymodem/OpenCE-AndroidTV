@@ -124,6 +124,87 @@ Pro and Onn 4K Plus (2026).
 Symbolizing: use the ELF the log's `guest image:` line names, from the same
 build (the APK's assets).
 
+## Profile of a script-heavy modded server (2026-11-12, build 112, Onn 4K Plus)
+
+The user's simpleperf recording of a modded server's map that ran at 5-15
+fps (not the usual frame drops). Symbolized against the release's
+`halo_guest_armv8.elf` (the ARMv8 image was the one running: the log's
+unaligned site 0010e04c is a VLDR there). Guest threads all show as
+"Thread-2"; split them by thread id.
+
+- Main thread 91% of a core: HaloScript's interpreter 45% (`hs_stack_allocate`
+  11%, `hs_thread_main` 8%, `hs_evaluate` 7%: about a million stack
+  allocations a second, the map's scripts), objects and units 13%,
+  collision 9%, animation 4%, the renderer's own code 4%, the Mali driver
+  7%, kernel 3%.
+- The sound mixer's thread 14% of a core (`mix_voice`, `mix`), internet
+  play's thread 6%. Neither is on the main thread.
+- The log had ~1500 unaligned fixups a second at two VLDRs in
+  `hs_evaluate_inequality`: a script's real numbers read from its thread's
+  stack. Fixed at the source in the branch (`hs_stack_real` in
+  `hs_runtime.c`, and the arguments' structures packed on 32-bit ARM in
+  `hs.c`).
+
+So on that map the simulation, not drawing, is the limit, and the
+interpreter's cost per node (its checks on every stack allocation) is what
+there is to gain; nothing in it says where a normal map's drops come from.
+Wanted: the same recording on a stock map during the drops (many players,
+grenades).
+
+## Profiles of stock maps (2026-11-12, build 112): the frame drops are the sound mixer
+
+Two 30 s recordings in normal network games, at the 30 fps limit.
+
+- Main thread: about 50% of a core (Mali driver 26% of that, kernel 7%,
+  `prepare_draw` 4%), and never over 84% in any 100 ms: it is not out of
+  time.
+- The mixer's thread (`mix_voice`): 36% and 52% of a core over the
+  recordings, 76% at the 90th percentile of 100 ms windows and up to 93%.
+  About 40% of it is the HRTF's filters (`audio.hrtf`, on by default since
+  the main project's 176b10c5), 26% the 48-tap sinc resampler: the user's
+  `config.toml` still says `audio.resampler = "sinc"`, the default before
+  176b10c5 (a setting is written to the file with the default of the day it
+  first appears, and later defaults do not replace it).
+- The mix held `mixer_lock` for all of each 1024-frame mix and took it
+  again at once, and the game's thread takes that lock for every sound
+  call: with the mix busy 50-90% of the time, the game waited on it. That
+  fits the drops coming with many players and explosions (many voices).
+
+In the branch: everything but the mix takes the lock through `mixer_gate`,
+which the mix passes before each turn, so a waiting game thread goes first;
+and the 32-bit app's mix takes turns of 128 frames (`MIX_TURN_FRAMES`). The
+sound itself is unchanged (the mixer's harness tests give the same results).
+Not yet run on a device. On the box, also set `audio.resampler = "xbox"`
+(the current default, an eight-tap low pass); `audio.hrtf = false` would
+take another 40% off the mixer at the cost of the Xbox's 3D filters, and
+should not be needed once the lock is fair.
+
+Result on the box (the user's fourth recording, the branch's build): still
+dips, and the recording caught one. For 1.5 s the mixer's thread was at
+87-88% of a core while the main thread fell from ~70% to ~30% (its Mali
+share from ~20% to ~5%): it was waiting, not working. The gate alone made
+each of a frame's sound calls wait out a 128-frame turn (2.4 ms at that
+load). Two more changes in the branch:
+
+- the mix stays out while a burst of the game's calls lasts (it waits until
+  none has passed the gate for 60 us, at most eight times a turn);
+- `audio.hrtf` defaults to false in the 32-bit app (about 40% of the mixer).
+
+The user's log also says `settings: cannot write .../config.toml` and
+`menus: could not set audio.resampler`: the file was pushed with adb and
+the app cannot write it, so it still says `sinc` and no setting changed in
+the menus is kept. Fix on the box: pull a copy, delete the file with adb,
+start the app (it writes a new one with today's defaults), set things again
+in the menus. Settings added since (`audio.hrtf` among them) take their
+default at every start there, so the new default applies at once.
+
+The branch build's guest image could not be fetched here (Actions
+artifacts come from a host the session's network does not allow), so that
+recording's guest samples are unsymbolized; releases' assets can be.
+
+If drops remain after this, record again: the next suspects are the Mali
+driver's share of the main thread and the GL thread idea below.
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
