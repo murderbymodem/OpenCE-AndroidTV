@@ -1189,15 +1189,23 @@ static struct
 	/* the textures uploaded, and the most draws and the longest time (ms)
 	of one frame: the averages hide a frame that stalls */
 	unsigned long texture_uploads, texture_upload_bytes;
+	/* the time they took, converted and uploaded, and the most one took (us) */
+	unsigned long texture_upload_us, slowest_texture_upload_us;
 	unsigned long most_draws, slowest_frame;
 	/* (draws counted when this frame began) */
 	unsigned long frame_first_draw;
+	/* programs linked (OpenGL ES, which keeps no cache of them), and the
+	time the links took, the most in one, in ms */
+	unsigned long links, link_ms, slowest_link_ms;
 } stats;
 
-void xgpu_statistics_texture_upload(unsigned long bytes)
+void xgpu_statistics_texture_upload(unsigned long bytes, unsigned long microseconds)
 {
 	stats.texture_uploads++;
 	stats.texture_upload_bytes += bytes;
+	stats.texture_upload_us += microseconds;
+	if (microseconds > stats.slowest_texture_upload_us)
+		stats.slowest_texture_upload_us = microseconds;
 }
 
 static D3DDevice *device_pointer(void)
@@ -3955,7 +3963,19 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 		program_cache_store(entry->program, shader_hash(vertex_shader), shader_hash(fragment_shader));
 	}
 #else
-	entry->program = xgpu_link_program(vertex_shader, fragment_shader, "shader");
+	{
+		struct timespec before, after;
+		unsigned long milliseconds;
+
+		clock_gettime(CLOCK_MONOTONIC, &before);
+		entry->program = xgpu_link_program(vertex_shader, fragment_shader, "shader");
+		clock_gettime(CLOCK_MONOTONIC, &after);
+		milliseconds = (unsigned long)((after.tv_sec - before.tv_sec) * 1000 + (after.tv_nsec - before.tv_nsec) / 1000000);
+		stats.links++;
+		stats.link_ms += milliseconds;
+		if (milliseconds > stats.slowest_link_ms)
+			stats.slowest_link_ms = milliseconds;
+	}
 	if (!entry->program)
 		return NULL;
 #endif
@@ -7987,6 +8007,14 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			stats.target_changes / stats.presents, stats.skipped_no_program, stats.skipped_no_target, stats.skipped_link,
 			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024,
 			stats.texture_uploads, stats.texture_upload_bytes / 1024, stats.most_draws, stats.slowest_frame);
+#ifdef HALO_GLES
+		if (stats.links)
+			platform_log("frame %lu: in 60 frames, %lu shader programs linked in %lu ms (at most %lu ms one)",
+				device.frame, stats.links, stats.link_ms, stats.slowest_link_ms);
+		if (stats.texture_uploads)
+			platform_log("frame %lu: in 60 frames, textures converted and uploaded in %lu ms (at most %lu ms one)",
+				device.frame, stats.texture_upload_us / 1000, stats.slowest_texture_upload_us / 1000);
+#endif
 		memset(&stats, 0, sizeof(stats));
 #ifndef HALO_GLES
 		{

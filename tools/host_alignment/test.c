@@ -13,6 +13,9 @@ int host_alignment_fixup(siginfo_t *information, void *context);
 struct host_guest_image host_image;
 static int logs;
 void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; logs++; }
+/* (a clock that advances a second a call, so that the reports are made) */
+#include <time.h>
+int clock_gettime(int clock, struct timespec *time) { static long seconds; (void)clock; time->tv_sec = ++seconds; time->tv_nsec = 0; return 0; }
 void *memcpy(void *d, const void *s, size_t n) { unsigned char *a = d; const unsigned char *b = s; while (n--) *a++ = *b++; return d; }
 static void sys_write(const char *s) { int n = 0; while (s[n]) n++; __asm__ volatile("int $0x80" :: "a"(4), "b"(1), "c"(s), "d"(n) : "memory"); }
 static void sys_exit(int code) { __asm__ volatile("int $0x80" :: "a"(1), "b"(code)); for (;;); }

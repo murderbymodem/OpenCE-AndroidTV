@@ -236,7 +236,9 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	struct xgpu_texture_description *description);
 void xgpu_texture_cache_begin_frame(void);
 /* (debug.gpu_stats) a texture of this many bytes uploaded to GL (d3d8_gl.c) */
-void xgpu_statistics_texture_upload(unsigned long bytes);
+/* debug.gpu_stats: a texture uploaded, its bytes and the time its
+conversion and upload took, in microseconds */
+void xgpu_statistics_texture_upload(unsigned long bytes, unsigned long microseconds);
 
 /* ---------- render targets */
 

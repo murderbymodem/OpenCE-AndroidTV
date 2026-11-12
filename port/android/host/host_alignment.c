@@ -22,10 +22,11 @@ on return) and steps over it. Anything else (Thumb code, the host's own,
 NEON's element loads, exclusive accesses) is left to crash as before.
 
 A fixup costs a signal, some microseconds. The first one at each place is
-logged with its address, and again at 1000, 100000 and 10000000, so that
-the places that make many can be found (llvm-addr2line, or llvm-symbolizer
---obj=halo_guest_armv7.elf) and their code made to access the data in
-aligned pieces instead.
+logged with its address, and again at 1000, 100000 and 10000000; and every
+10 seconds in which there were any, how many there were and the three places
+that made the most, so that the places that make many can be found
+(llvm-addr2line, or llvm-symbolizer --obj=halo_guest_armv7.elf) and their
+code made to access the data in aligned pieces instead (HALO_UNALIGNED).
 */
 
 #include "host.h"
@@ -34,6 +35,7 @@ aligned pieces instead.
 
 #include <signal.h>
 #include <string.h>
+#include <time.h>
 #include <ucontext.h>
 
 /* the kernel's VFP frame in uc_regspace (arch/arm/include/asm/ucontext.h:
@@ -52,11 +54,67 @@ struct site
 {
 	uint32_t pc;
 	uint32_t count;
+	/* since the latest report */
+	uint32_t recent;
 };
+
+#define REPORT_SECONDS 10
 
 static struct site sites[MAXIMUM_SITES];
 static volatile uint32_t site_count;
 static volatile uint32_t total_fixups;
+static volatile uint32_t recent_fixups;
+static volatile int64_t report_due;
+static volatile int reporting;
+
+/* every REPORT_SECONDS with fixups: their number and the busiest places
+(from the handler: the clock and the log are safe there, and one thread
+reports at a time) */
+static void report(void)
+{
+	struct timespec now;
+	uint32_t index, count, best[3] = { 0, 0, 0 }, best_count[3] = { 0, 0, 0 };
+	int64_t seconds;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	seconds = (int64_t)now.tv_sec;
+	if (!report_due)
+	{
+		report_due = seconds + REPORT_SECONDS;
+		return;
+	}
+	if (seconds < report_due || __sync_lock_test_and_set(&reporting, 1))
+		return;
+	count = site_count < MAXIMUM_SITES ? site_count : MAXIMUM_SITES;
+	for (index = 0; index < count; index++)
+	{
+		uint32_t recent = sites[index].recent, place;
+
+		sites[index].recent = 0;
+		for (place = 0; place < 3; place++)
+		{
+			if (recent > best_count[place])
+			{
+				uint32_t later;
+
+				for (later = 2; later > place; later--)
+				{
+					best[later] = best[later - 1];
+					best_count[later] = best_count[later - 1];
+				}
+				best[place] = sites[index].pc;
+				best_count[place] = recent;
+				break;
+			}
+		}
+	}
+	host_logf(HOST_LOG_WARN, "unaligned accesses: %u in %d s; most at guest %08x (%u), %08x (%u), %08x (%u)",
+		recent_fixups, REPORT_SECONDS, best[0] - host_image.base, best_count[0], best[1] ? best[1] - host_image.base : 0,
+		best_count[1], best[2] ? best[2] - host_image.base : 0, best_count[2]);
+	recent_fixups = 0;
+	report_due = seconds + REPORT_SECONDS;
+	__sync_lock_release(&reporting);
+}
 
 static uint32_t *core_register(struct sigcontext *registers, unsigned int index)
 {
@@ -267,11 +325,13 @@ static void note_site(uint32_t pc)
 	uint32_t times = 0;
 
 	__sync_add_and_fetch(&total_fixups, 1);
+	__sync_add_and_fetch(&recent_fixups, 1);
 	for (index = 0; index < count && index < MAXIMUM_SITES; index++)
 	{
 		if (sites[index].pc == pc)
 		{
 			times = __sync_add_and_fetch(&sites[index].count, 1);
+			__sync_add_and_fetch(&sites[index].recent, 1);
 			break;
 		}
 	}
@@ -283,6 +343,7 @@ static void note_site(uint32_t pc)
 		{
 			sites[index].pc = pc;
 			sites[index].count = times = 1;
+			sites[index].recent = 1;
 		}
 	}
 	if (times == 1 || times == 1000 || times == 100000 || times == 10000000)
@@ -290,6 +351,7 @@ static void note_site(uint32_t pc)
 		host_logf(HOST_LOG_WARN, "unaligned access fixed at %08x (guest %08x), %u times there, %u in all",
 			pc, pc - host_image.base, times, total_fixups);
 	}
+	report();
 }
 
 int host_alignment_fixup(siginfo_t *information, void *context_pointer)

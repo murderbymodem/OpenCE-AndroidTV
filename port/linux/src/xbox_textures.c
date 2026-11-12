@@ -27,6 +27,7 @@ memory_watch.c detects that by write-protecting the pages.
 #define GL_BGRA GL_RGBA
 #endif
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 #ifdef HALO_ANDROID
 #include "../game/android_ce_texture_cache.h"
@@ -1498,9 +1499,16 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 					entry->description.height, entry->size, entry->generation,
 					ones * 100 / entry->size, zeros * 100 / entry->size);
 			}
-			upload(entry->texture, entry->target, &entry->description, (const unsigned char *)entry->address, palette,
-				custom_edition_texels_order(entry->address));
-			xgpu_statistics_texture_upload(entry->size);
+			{
+				struct timespec before, after;
+
+				clock_gettime(CLOCK_MONOTONIC, &before);
+				upload(entry->texture, entry->target, &entry->description, (const unsigned char *)entry->address, palette,
+					custom_edition_texels_order(entry->address));
+				clock_gettime(CLOCK_MONOTONIC, &after);
+				xgpu_statistics_texture_upload(entry->size, (unsigned long)((after.tv_sec - before.tv_sec) * 1000000 +
+					(after.tv_nsec - before.tv_nsec) / 1000));
+			}
 		}
 	}
 	entry->last_used_frame = texture_frame;
