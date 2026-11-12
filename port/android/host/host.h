@@ -86,6 +86,7 @@ void host_low_unmap(void *address, size_t size);
 /* 1 if [address, address + size) was handed out by host_low_map or is one of
 the fixed ranges */
 int host_low_owns(uintptr_t address, size_t size);
+int host_low_owns_try(uintptr_t address, size_t size);
 /* the guest's mmap/munmap/mprotect/madvise/mremap (host_syscall.c) */
 long host_guest_mmap(uint64_t address, uint64_t size, int protection, int flags, int fd, int64_t offset);
 long host_guest_munmap(uint64_t address, uint64_t size);

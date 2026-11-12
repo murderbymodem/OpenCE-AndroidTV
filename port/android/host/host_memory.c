@@ -761,6 +761,22 @@ int host_low_owns(uintptr_t address, size_t size)
 	return result;
 }
 
+/* host_low_owns for a signal handler (the sampler's, host_debug.c), which
+may have interrupted this thread with memory_lock held: -1 where the pools
+cannot be looked at without waiting for it */
+int host_low_owns_try(uintptr_t address, size_t size)
+{
+	int result;
+
+	if (in_range(address, size, window_base, window_end) || in_range(address, size, image_base, image_end))
+		return 1;
+	if (pthread_mutex_trylock(&memory_lock) != 0)
+		return -1;
+	result = pool_of(address, size) != NULL;
+	pthread_mutex_unlock(&memory_lock);
+	return result;
+}
+
 /* ---------- the guest's memory system calls */
 
 long host_guest_mmap(uint64_t address, uint64_t size, int protection, int flags, int fd, int64_t offset)

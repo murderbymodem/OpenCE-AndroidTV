@@ -56,29 +56,133 @@ void host_debug_thread_exited(void)
 	pthread_mutex_unlock(&threads_lock);
 }
 
+/* A sample is taken in a signal handler, on the thread it is of, which may
+hold any lock at that moment: the log's, the allocator's, the guest
+memory's. So the handler takes none and calls nothing that might: it copies
+the registers and the frame chain into a slot of a ring, and the sampler's
+own thread writes the slots to the log afterwards. (Logging from the
+handler was safe enough once a second; fifty times a second it soon
+interrupted a thread inside a lock it then waited for, and the app froze.) */
+#define SAMPLE_SLOTS 256
+#define SAMPLE_FRAMES 12
+enum
+{
+	_sample_slot_empty,
+	_sample_slot_writing,
+	_sample_slot_ready,
+};
+
+static struct sample_slot
+{
+	int state;
+	pid_t thread;
+	uint32_t pc, lr;
+	int frame_count;
+	uint32_t frames[SAMPLE_FRAMES];
+} sample_slots[SAMPLE_SLOTS];
+static unsigned int sample_next;
+
 static void sample_handler(int signal_number, siginfo_t *information, void *context)
 {
 	const ucontext_t *ucontext = context;
 	const struct sigcontext *registers = (const struct sigcontext *)&ucontext->uc_mcontext;
-	char line[512];
-	int length, depth;
+	struct sample_slot *slot = &sample_slots[__atomic_fetch_add(&sample_next, 1, __ATOMIC_RELAXED) % SAMPLE_SLOTS];
 	uint64_t fp = HOST_CONTEXT_FP(registers);
+	int depth, empty = _sample_slot_empty;
 
 	(void)signal_number;
 	(void)information;
-	length = snprintf(line, sizeof(line), "sample tid %d: pc %llx lr %llx", gettid(),
-		(unsigned long long)HOST_CONTEXT_PC(registers), (unsigned long long)HOST_CONTEXT_LR(registers));
-	for (depth = 0; depth < 12 && fp && fp < 0x100000000ULL && !(fp & (sizeof(host_frame_word) - 1)) &&
-		host_low_owns(fp, 2 * sizeof(host_frame_word)); depth++)
+	/* (a slot the log has not taken yet: this sample is dropped) */
+	if (!__atomic_compare_exchange_n(&slot->state, &empty, _sample_slot_writing, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+		return;
+	slot->thread = (pid_t)syscall(SYS_gettid);
+	slot->pc = (uint32_t)HOST_CONTEXT_PC(registers);
+	slot->lr = (uint32_t)HOST_CONTEXT_LR(registers);
+	/* (the frames while each is in the guest's memory, which is looked up
+	only if its lock is free: otherwise the sample has no callers) */
+	for (depth = 0; depth < SAMPLE_FRAMES && fp && fp < 0x100000000ULL && !(fp & (sizeof(host_frame_word) - 1)) &&
+		host_low_owns_try(fp, 2 * sizeof(host_frame_word)) == 1; depth++)
 	{
 		const host_frame_word *frame = (const host_frame_word *)(uintptr_t)fp;
 
-		length += snprintf(line + length, sizeof(line) - length, " %llx", (unsigned long long)frame[1]);
+		slot->frames[depth] = (uint32_t)frame[1];
 		if (frame[0] <= fp)
+		{
+			depth++;
 			break;
+		}
 		fp = frame[0];
 	}
-	host_logf(HOST_LOG_INFO, "%s", line);
+	slot->frame_count = depth;
+	__atomic_store_n(&slot->state, _sample_slot_ready, __ATOMIC_RELEASE);
+}
+
+/* the ready samples, written to the log by the sampler's thread. A thread
+that is where it was at its last sample (waiting, mostly) is not written
+again: "same N" counts those, when it has moved on or every fifty. */
+static void samples_log(void)
+{
+	static struct
+	{
+		pid_t thread;
+		uint32_t pc, lr, frame;
+		unsigned int same;
+	} last[MAXIMUM_THREADS];
+	static unsigned int taken;
+	unsigned int end = __atomic_load_n(&sample_next, __ATOMIC_RELAXED);
+
+	/* (more than a ring's worth since: the oldest were dropped by their
+	handlers, or are still being written) */
+	if (end - taken > SAMPLE_SLOTS)
+		taken = end - SAMPLE_SLOTS;
+	for (; taken != end; taken++)
+	{
+		struct sample_slot *slot = &sample_slots[taken % SAMPLE_SLOTS];
+		char line[512];
+		int length, depth, index, entry = -1;
+
+		if (__atomic_load_n(&slot->state, __ATOMIC_ACQUIRE) != _sample_slot_ready)
+		{
+			/* (not written yet: next time, unless it never was) */
+			if (__atomic_load_n(&slot->state, __ATOMIC_ACQUIRE) == _sample_slot_writing)
+				break;
+			continue;
+		}
+		for (index = 0; index < MAXIMUM_THREADS; index++)
+		{
+			if (last[index].thread == slot->thread || (entry < 0 && !last[index].thread))
+				entry = index;
+			if (last[index].thread == slot->thread)
+				break;
+		}
+		if (entry >= 0 && last[entry].thread == slot->thread && last[entry].pc == slot->pc &&
+			last[entry].lr == slot->lr && last[entry].frame == (slot->frame_count ? slot->frames[0] : 0))
+		{
+			if (++last[entry].same == 50)
+			{
+				host_logf(HOST_LOG_INFO, "sample tid %d: same %u", (int)slot->thread, last[entry].same);
+				last[entry].same = 0;
+			}
+		}
+		else
+		{
+			if (entry >= 0)
+			{
+				if (last[entry].thread == slot->thread && last[entry].same)
+					host_logf(HOST_LOG_INFO, "sample tid %d: same %u", (int)slot->thread, last[entry].same);
+				last[entry].thread = slot->thread;
+				last[entry].pc = slot->pc;
+				last[entry].lr = slot->lr;
+				last[entry].frame = slot->frame_count ? slot->frames[0] : 0;
+				last[entry].same = 0;
+			}
+			length = snprintf(line, sizeof(line), "sample tid %d: pc %x lr %x", (int)slot->thread, slot->pc, slot->lr);
+			for (depth = 0; depth < slot->frame_count && length < (int)sizeof(line) - 12; depth++)
+				length += snprintf(line + length, sizeof(line) - length, " %x", slot->frames[depth]);
+			host_logf(HOST_LOG_INFO, "%s", line);
+		}
+		__atomic_store_n(&slot->state, _sample_slot_empty, __ATOMIC_RELEASE);
+	}
 }
 
 /* (the time between samples: a fraction of a second for a profile with its
@@ -95,6 +199,8 @@ static void *sampler(void *context)
 		int index;
 
 		nanosleep(&interval, NULL);
+		/* (the last round's samples, their handlers long done) */
+		samples_log();
 		pthread_mutex_lock(&threads_lock);
 		memcpy(threads, guest_threads, sizeof(threads));
 		pthread_mutex_unlock(&threads_lock);
