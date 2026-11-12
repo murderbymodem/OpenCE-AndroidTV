@@ -15,6 +15,9 @@ GL_FUNCTIONS(GL_DEFINE_FUNCTION)
 #ifdef HALO_GLES
 GL_OPTIONAL_FUNCTIONS(GL_DEFINE_FUNCTION)
 #endif
+#ifdef HALO_ANDROID
+GL_ANDROID_FUNCTIONS(GL_DEFINE_FUNCTION)
+#endif
 
 int gl_functions_load(void)
 {
@@ -38,6 +41,9 @@ has them (xgpu_capabilities, d3d8_gl.c) */
 		success = success && !GL_MISSING_FAILS; \
 	}
 	GL_FUNCTIONS(GL_LOAD_FUNCTION)
+#ifdef HALO_ANDROID
+	GL_ANDROID_FUNCTIONS(GL_LOAD_FUNCTION)
+#endif
 #undef GL_LOAD_FUNCTION
 #if defined(HALO_GLES) && !defined(HALO_WEB)
 	/* a missing one is no failure: the renderer uses each only where the

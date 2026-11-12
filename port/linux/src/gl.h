@@ -143,6 +143,13 @@ context has the extension, never required (gl_functions.c). On ES 3.0 and
 #define GL_OPTIONAL_FUNCTIONS(X) \
 	X(glDrawElementsBaseVertexEXT) \
 	X(glDrawElementsBaseVertexOES)
+/* the Android app's only, which WebGL 2 lacks: the program cache on disk's
+(d3d8_gl.c) */
+#define GL_ANDROID_FUNCTIONS(X) \
+	X(glProgramParameteri) \
+	X(glGetProgramBinary) \
+	X(glProgramBinary) \
+	X(glDeleteProgram)
 /* ANDROID_GL_FUNCTIONS_END */
 #else
 #define GL_FUNCTIONS(X) \
@@ -278,6 +285,9 @@ GL_FUNCTIONS(GL_DECLARE_FUNCTION)
 #ifdef HALO_GLES
 GL_OPTIONAL_FUNCTIONS(GL_DECLARE_FUNCTION)
 #endif
+#ifdef HALO_ANDROID
+GL_ANDROID_FUNCTIONS(GL_DECLARE_FUNCTION)
+#endif
 #undef GL_DECLARE_FUNCTION
 
 /* call sites use the ordinary names; gl_functions.c, which defines the
@@ -391,6 +401,12 @@ pointers, sees the declarations without these aliases */
 #define glEndQuery halo_glEndQuery
 #define glGetQueryObjectuiv halo_glGetQueryObjectuiv
 #define glGetInternalformativ halo_glGetInternalformativ
+#ifdef HALO_ANDROID
+#define glProgramParameteri halo_glProgramParameteri
+#define glGetProgramBinary halo_glGetProgramBinary
+#define glProgramBinary halo_glProgramBinary
+#define glDeleteProgram halo_glDeleteProgram
+#endif
 #else
 #define glGetString halo_glGetString
 #define glGetIntegerv halo_glGetIntegerv
