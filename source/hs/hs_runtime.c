@@ -361,6 +361,10 @@ enum
 
 /* the four ordered comparisons of hs_evaluate_inequality, expanded once per operand
    representation; each expansion reports its own case's location */
+/* port: a real number on a thread's stack, whose frames start at any
+address: read as it lies on 32-bit ARM (HALO_UNALIGNED, halo_linux_prefix.h) */
+typedef real HALO_UNALIGNED hs_stack_real;
+
 #define HS_EVALUATE_INEQUALITY(first, second, line) \
 	value0 = (first); \
 	value1 = (second); \
@@ -2108,7 +2112,8 @@ void hs_evaluate_inequality(
 		switch (parameter_types[0])
 		{
 		case _hs_type_real:
-			HS_EVALUATE_INEQUALITY(((real *)arguments)[0], ((real *)arguments)[1], 0x16b);
+			/* port: (hs_stack_real) */
+			HS_EVALUATE_INEQUALITY(((hs_stack_real *)arguments)[0], ((hs_stack_real *)arguments)[1], 0x16b);
 			break;
 		case _hs_type_long_integer:
 			HS_EVALUATE_INEQUALITY((real)arguments[0], (real)arguments[1], 0x16e);
@@ -2355,8 +2360,9 @@ void hs_evaluate_arithmetic(
 	struct hs_thread_datum *thread = hs_thread_get(thread_index);
 	short *argument_index = hs_stack_allocate(thread_index, sizeof(short));
 	long *expression_index = hs_stack_allocate(thread_index, sizeof(long));
-	real *value = hs_stack_allocate(thread_index, sizeof(real));
-	real *result = hs_stack_allocate(thread_index, sizeof(real));
+	/* port: (hs_stack_real) */
+	hs_stack_real *value = hs_stack_allocate(thread_index, sizeof(real));
+	hs_stack_real *result = hs_stack_allocate(thread_index, sizeof(real));
 	long result_long;
 
 	/* port: none on a stack overflow (hs_stack_overflow) */

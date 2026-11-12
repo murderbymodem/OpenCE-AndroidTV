@@ -3280,6 +3280,15 @@ struct hs_object_list_get_element_arguments
 	unsigned short element_index;
 };
 
+/* port: a function's arguments lie on its thread's stack, whose frames
+start at any address, and 32-bit ARM stops at a real number loaded from an
+address that is not a multiple of 4 (HALO_UNALIGNED, halo_linux_prefix.h).
+There these structures are packed, so that their members are loaded from
+any address; each writes out its own padding, so no member moves. */
+#ifdef HALO_ARM32_GUEST
+#pragma pack(push, 1)
+#endif
+
 union hs_real_value
 {
 	real real_value;
@@ -3557,6 +3566,10 @@ union hs_boolean_result
 	boolean boolean;
 	long value;
 };
+
+#ifdef HALO_ARM32_GUEST
+#pragma pack(pop) /* port: (the arguments' structures, above) */
+#endif
 
 /* ---------- prototypes */
 
