@@ -227,6 +227,25 @@ pressed`); `input.quick_turn_left` and `input.quick_turn_right` take
 `buttonN`. The host reads raw joystick buttons for the guest through
 `host_sdl_gamepad_button` (0x100 + N).
 
+## Profile of a busy co-op game as a client (2026-11-12, build 119)
+
+Main thread 91% of a core, and now it is the simulation: collision 56%
+(`collision_test_vector` 15%, 85% of that its loop over a cluster's objects
+testing each one's bounding sphere against the ray, with
+`cluster_partition_get_next_datum` another 6%; `collision_features_test_vector`
+7%, `collision_bsp_test_vector_recursive` 7%, `bsp2d_test_sphere_recursive`
+6%), objects and units 18%, the Mali driver 4%, the renderer's own code 4%.
+AI is 0% (a client does not run it). The mixer's thread 22% of a core.
+
+simpleperf has no callers for the guest (no unwind tables, and the kernel's
+frame-pointer walk does not read clang's 32-bit frames), so what casts the
+rays is not known. `debug.sample_seconds` now takes fractions (branch
+`claude/sampler-call-chains`): `sample_seconds = 0.02`, `adb logcat -s halo`
+to a file during the fight, then count callers. Decide from that: the rays
+may be something a client need not do, or the object loop may need a cheaper
+exact test. Collision results are simulation: any change must give the same
+results bit for bit.
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile

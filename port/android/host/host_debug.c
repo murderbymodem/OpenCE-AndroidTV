@@ -16,6 +16,7 @@ symbolize against build/android/halo_guest.elf (llvm-symbolizer
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -80,16 +81,20 @@ static void sample_handler(int signal_number, siginfo_t *information, void *cont
 	host_logf(HOST_LOG_INFO, "%s", line);
 }
 
+/* (the time between samples: a fraction of a second for a profile with its
+callers, which a profiler cannot give of the 32-bit guest, whole seconds for
+finding where a thread hangs) */
 static void *sampler(void *context)
 {
-	unsigned int seconds = (unsigned int)(uintptr_t)context;
+	unsigned int milliseconds = (unsigned int)(uintptr_t)context;
 
 	for (;;)
 	{
 		pid_t threads[MAXIMUM_THREADS];
+		struct timespec interval = { milliseconds / 1000, (long)(milliseconds % 1000) * 1000000L };
 		int index;
 
-		sleep(seconds);
+		nanosleep(&interval, NULL);
 		pthread_mutex_lock(&threads_lock);
 		memcpy(threads, guest_threads, sizeof(threads));
 		pthread_mutex_unlock(&threads_lock);
@@ -106,16 +111,19 @@ void host_debug_start_sampler(const char *setting)
 {
 	struct sigaction action;
 	pthread_t thread;
-	unsigned int seconds = setting ? (unsigned int)atoi(setting) : 0;
+	double seconds = setting ? atof(setting) : 0.0;
+	unsigned int milliseconds;
 
-	if (!seconds)
+	if (!(seconds > 0.0))
 		return;
+	/* (a hundred samples a second at most: each is a line in the log) */
+	milliseconds = seconds < 0.01 ? 10 : seconds > 3600.0 ? 3600000 : (unsigned int)(seconds * 1000.0 + 0.5);
 	memset(&action, 0, sizeof(action));
 	action.sa_sigaction = sample_handler;
 	action.sa_flags = SA_SIGINFO | SA_RESTART;
 	sigemptyset(&action.sa_mask);
 	sigaction(SAMPLE_SIGNAL, &action, NULL);
-	if (pthread_create(&thread, NULL, sampler, (void *)(uintptr_t)seconds) == 0)
+	if (pthread_create(&thread, NULL, sampler, (void *)(uintptr_t)milliseconds) == 0)
 		pthread_detach(thread);
-	host_logf(HOST_LOG_INFO, "sampling guest threads every %u s", seconds);
+	host_logf(HOST_LOG_INFO, "sampling guest threads every %u ms", milliseconds);
 }
