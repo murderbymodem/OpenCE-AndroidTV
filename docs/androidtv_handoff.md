@@ -124,6 +124,33 @@ Pro and Onn 4K Plus (2026).
 Symbolizing: use the ELF the log's `guest image:` line names, from the same
 build (the APK's assets).
 
+## Profile of a script-heavy modded server (2026-11-12, build 112, Onn 4K Plus)
+
+The user's simpleperf recording of a modded server's map that ran at 5-15
+fps (not the usual frame drops). Symbolized against the release's
+`halo_guest_armv8.elf` (the ARMv8 image was the one running: the log's
+unaligned site 0010e04c is a VLDR there). Guest threads all show as
+"Thread-2"; split them by thread id.
+
+- Main thread 91% of a core: HaloScript's interpreter 45% (`hs_stack_allocate`
+  11%, `hs_thread_main` 8%, `hs_evaluate` 7%: about a million stack
+  allocations a second, the map's scripts), objects and units 13%,
+  collision 9%, animation 4%, the renderer's own code 4%, the Mali driver
+  7%, kernel 3%.
+- The sound mixer's thread 14% of a core (`mix_voice`, `mix`), internet
+  play's thread 6%. Neither is on the main thread.
+- The log had ~1500 unaligned fixups a second at two VLDRs in
+  `hs_evaluate_inequality`: a script's real numbers read from its thread's
+  stack. Fixed at the source in the branch (`hs_stack_real` in
+  `hs_runtime.c`, and the arguments' structures packed on 32-bit ARM in
+  `hs.c`).
+
+So on that map the simulation, not drawing, is the limit, and the
+interpreter's cost per node (its checks on every stack allocation) is what
+there is to gain; nothing in it says where a normal map's drops come from.
+Wanted: the same recording on a stock map during the drops (many players,
+grenades).
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
