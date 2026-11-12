@@ -42,6 +42,14 @@ data folder. Refer to [port/android/README.md](port/android/README.md). On
 the web, the page copies `maps/` out of the disc image into the browser's
 storage for the site - nothing is uploaded ([port/web/README.md](port/web/README.md)).
 
+## Hardware
+
+The 32-bit AndroidTV app has been tested on:
+
+| Device | CPU | GPU | RAM |
+| --- | --- | --- | --- |
+| onn 4K Pro Streaming Device Gen 2 (2026), Android 14 (32-bit) | Amlogic S905X5M, 4x Cortex-A55 | Arm Mali-G310 (OpenGL ES 3.2) | 3 GB |
+
 ## Download
 
 GitHub Actions builds the game for each commit. 
