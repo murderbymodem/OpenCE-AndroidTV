@@ -76,15 +76,51 @@ Remaining costs per busy frame: ~200-350 draws at ~14 us each, ~400
 glUniform4fv, ~400 buffer writes; shader links of 50-90 ms on first use of an
 effect. Memory: game process ~563 MB PSS, 343 MB of it GL (textures etc.).
 
-## Next steps (agreed order)
+## Branch `claude/androidtv-optimizations` (not yet tested on the box)
 
-1. Shader program binary cache on disk for GLES (and/or prelink at map load)
-   to remove first-use stutters.
-2. ARMv8 (AArch32) guest image alongside ARMv7, chosen at start by hwcap
-   (hardware divide, vrint for fast_ftol). Keep -ffp-contract=off.
-3. DXT3/DXT5 -> ASTC (currently decoded to RGBA32 on Mali): biggest memory win.
+Two changes, each its own commit, built here (`ninja android`, armeabi-v7a
+release, clang 18 without PGO) but not run on a device. Test the branch's
+build (Actions, Android TV, Run workflow, branch
+`claude/androidtv-optimizations`: the run's artifacts, no release) before
+merging it into `armeabi-v7a`, whose builds the app's updater installs.
+
+- Shader cache (next step 1, done): `display.shader_cache`, the desktop's
+  program cache on disk, now runs in the Android app, default true in the
+  32-bit app. First run links and stores each program; later runs load it
+  (`shader_cache/<driver hash>.bin` under the save root). `debug.gpu_stats`
+  logs "programs: N from the shader cache, M linked ...". To check: play a
+  map twice with `debug.gpu_stats = true`; the second run should link
+  almost nothing and lose the first-use stutters. If rendering is wrong,
+  set `display.shader_cache = false` (and say so: the driver's binaries
+  would not be trustworthy).
+- Link-time optimisation of the guest: `configure.py --android-guest-lto`
+  (`CI_ANDROID_GUEST_LTO`, set by the workflow's release build). The image
+  has about half as many functions left (the rest inlined). Expected: less
+  CPU time in the game's own code (the half of the main thread that is not
+  the driver). To check: fps and frame times against the last release in
+  the same Slayer game with `display.max_fps = 0`; the log's unaligned
+  fixup summary (inlining can make new unaligned sites: fix the busy ones
+  with `HALO_UNALIGNED`); a campaign level and a network game for crashes
+  (deeper inlining means larger stack frames). To build without it, remove
+  `CI_ANDROID_GUEST_LTO` from the workflow.
+
+## Next steps
+
+1. ~~Shader program binary cache~~ done (above). Prelinking at map load is
+   still open, for the first run's stutters.
+2. ARMv8 (AArch32) guest image: set aside (2026-11-12). The test boxes'
+   Cortex-A55 could run it (it is an ARMv8.2 processor under a 32-bit
+   Android), but the gain is small (hardware divide, vrint) and it would be
+   a second image to build and test. Look at it again only if a profile
+   shows time in `__aeabi_idiv`/`__aeabi_uidiv` or the float-to-int helpers.
+3. DXT3/DXT5 -> ASTC (DXT1 already goes to ASTC:
+   `display.dxt1_astc`): biggest memory win.
 4. Merge consecutive small "immediate" draws (HUD/effects, 100-150/frame).
 5. Optional: batch object shadows into one atlas to bring shadows back cheaply.
+6. Worth measuring after LTO: the softfp calling convention's cost inside
+   the guest (floats cross every call in core registers). The guest could
+   use the hard-float convention internally, with only its host imports
+   declared softfp.
 Multiplayer rule: change nothing in the simulation or network messages; keep
 `HALO_PORT_NETWORK_VERSION` as upstream's.
 
