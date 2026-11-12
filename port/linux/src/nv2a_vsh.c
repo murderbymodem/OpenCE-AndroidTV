@@ -359,11 +359,14 @@ static const char shader_prologue[] =
 	"out vec4 xT3;\n"
 	"out float xFog;\n"
 	"invariant gl_Position;\n"
+	/* (each field taken unsigned and its sign then extended by subtraction,
+	with no uint of 2^31 or more converted to an int, which not every GPU
+	converts by its bits) */
 	"vec4 unpack_normpacked3(uint p)\n"
 	"{\n"
-	"	int x = int(p << 21) >> 21;\n"
-	"	int y = int(p << 10) >> 21;\n"
-	"	int z = int(p) >> 22;\n"
+	"	int x = int(p & 0x7ffu) - int((p & 0x400u) << 1);\n"
+	"	int y = int((p >> 11) & 0x7ffu) - int((p >> 10) & 0x800u);\n"
+	"	int z = int(p >> 22) - int((p >> 21) & 0x400u);\n"
 	"	return vec4(float(x) / 1023.0, float(y) / 1023.0, float(z) / 511.0, 1.0);\n"
 	"}\n"
 	"vec4 nv2a_rcc(float x)\n"
