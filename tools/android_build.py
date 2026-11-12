@@ -137,6 +137,20 @@ ARMV7_GUEST_ABI_FLAGS = [
 ]
 
 
+# The same guest for ARMv8 processors (AArch32: most 32-bit Android TV boxes
+# have a 64-bit processor under a 32-bit Android, the Onn 4K boxes' Cortex-A55
+# among them): the image the 32-bit app starts where the processor says it is
+# ARMv8 (port/android/host/host_main.c), the ARMv7 one elsewhere. The compiler
+# then divides with the processor's instruction and rounds with VRINT, where
+# ARMv7 code calls a routine (rint, floorf, __divsi3: some 900 places), and
+# orders the code for the Cortex-A55. Every one of those is exact, so both
+# images compute the same results (and never a fused multiply-add).
+ARMV8_GUEST_ABI_FLAGS = [
+    "-march=armv8-a" if flag == "-march=armv7-a" else "-mfpu=neon-fp-armv8" if flag == "-mfpu=neon" else flag
+    for flag in ARMV7_GUEST_ABI_FLAGS
+] + ["-mtune=cortex-a55"]
+
+
 def _arm64_compile(launcher: str, python: str) -> str:
     return (f"{launcher}$android_guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
             f"{python} tools/android_asm_convert.py $out.darwin.s $out.s && "
@@ -180,6 +194,17 @@ ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
         # module (configure.py --android-guest-lto)
         "lto": True,
     },
+}
+
+# further guest images of an ABI's app, each built as the ABI's own with
+# these in place of its entries (the host library and SDL3 are the ABI's)
+ANDROID_EXTRA_GUESTS: Dict[str, List[Dict[str, Any]]] = {
+    "armeabi-v7a": [{
+        "prefix": "android_armv8",
+        "build": BUILD / "armv8",
+        "image": "halo_guest_armv8.elf",
+        "abi_flags": ARMV8_GUEST_ABI_FLAGS,
+    }],
 }
 
 # as the Linux build (tools/linux_build.py), minus what only x86 needs
@@ -375,6 +400,8 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     staged: List[Path] = []
     for abi in abis:
         staged += _generate_abi(n, sln, abi, ndk, toolchain, sysroot_include, config)
+        for guest in ANDROID_EXTRA_GUESTS.get(abi, []):
+            staged += _generate_abi(n, sln, abi, ndk, toolchain, sysroot_include, config, guest)
     # internet play's MQTT brokers, in the APK: the app writes them beside
     # config.toml (port/android/host/host_main.c)
     staged_brokers = BUILD / "assets" / "brokers.txt"
@@ -403,10 +430,11 @@ def generate_android_build(n: Writer, sln: Any) -> None:
 
 
 def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sysroot_include: Path,
-                  config: Dict[str, Any]) -> List[Path]:
+                  config: Dict[str, Any], extra_guest: Optional[Dict[str, Any]] = None) -> List[Path]:
     """The guest image, SDL3 and the host library for one Android ABI
-    (ANDROID_ABIS); returns the files staged for Gradle."""
-    spec = ANDROID_ABIS[abi]
+    (ANDROID_ABIS); returns the files staged for Gradle. With extra_guest
+    (ANDROID_EXTRA_GUESTS), only that further guest image of the ABI."""
+    spec = {**ANDROID_ABIS[abi], **(extra_guest or {})}
     p = spec["prefix"]
     root = spec["build"]
     host_cc = toolchain / "bin" / f"{spec['host_triple']}{ANDROID_API}-clang"
@@ -710,6 +738,12 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         rspfile_content="$in_newline",
     )
     n.build(outputs=image, rule=f"{p}_guest_link", inputs=objects, implicit=[libguestc, linker_script])
+
+    if extra_guest:
+        staged_image = assets_dir / spec["image"]
+        n.rule(name=f"{p}_copy", command="cp $in $out", description="ANDROID STAGE $out")
+        n.build(outputs=staged_image, rule=f"{p}_copy", inputs=image)
+        return [staged_image]
 
     # ---------- SDL3
 

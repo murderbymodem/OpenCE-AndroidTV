@@ -100,6 +100,10 @@ struct host_guest_image
 };
 
 extern struct host_guest_image host_image;
+/* the image's file in the APK, for the logs: addresses in the guest are
+symbolized against the build's file of that name (host_main.c takes the
+32-bit app's ARMv8 one where the processor is ARMv8) */
+extern const char *host_guest_image_name;
 
 /* maps the image from the ELF file in memory; returns 0 on success */
 int host_load_image(const void *elf, size_t size);

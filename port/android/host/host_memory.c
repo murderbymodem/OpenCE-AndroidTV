@@ -888,7 +888,7 @@ static void report_crash(int signal_number, siginfo_t *information, void *contex
 		signal_number, information->si_addr, (unsigned long long)pc, (unsigned long long)lr,
 		(unsigned long long)HOST_CONTEXT_SP(registers));
 	if (pc >= host_image.base && pc < host_image.end)
-		host_logf(HOST_LOG_ERROR, "  in the guest image: addr2line -e halo_guest.elf 0x%llx 0x%llx",
+		host_logf(HOST_LOG_ERROR, "  in the guest image: addr2line -e %s 0x%llx 0x%llx", host_guest_image_name,
 			(unsigned long long)pc, (unsigned long long)lr);
 	for (index = 0; index < HOST_CONTEXT_REGISTER_COUNT; index += 4)
 	{

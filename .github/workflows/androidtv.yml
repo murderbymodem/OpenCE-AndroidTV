@@ -225,6 +225,7 @@ jobs:
           for apk in dist/halo-android-release/app-release.apk dist/halo-android-debug/app-debug.apk; do
             unzip -l "$apk" | grep -q "lib/armeabi-v7a/libmain.so"
             unzip -l "$apk" | grep -q "assets/halo_guest_armv7.elf"
+            unzip -l "$apk" | grep -q "assets/halo_guest_armv8.elf"
             ! unzip -l "$apk" | grep -q "lib/arm64-v8a/"
           done
 
