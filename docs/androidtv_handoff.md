@@ -205,6 +205,28 @@ recording's guest samples are unsymbolized; releases' assets can be.
 If drops remain after this, record again: the next suspects are the Mali
 driver's share of the main thread and the GL thread idea below.
 
+## 8BitDo controller support: turn buttons (merged 2026-11-12, tested on the box)
+
+The user plays with an 8BitDo Ultimate 2 over Bluetooth and wanted its
+back paddles to turn quickly, without anything that would count as a cheat:
+not a fixed or instant 180, but what the look stick held over does at a
+high sensitivity. While a turn button is held the view turns at
+`input.quick_turn_rate` degrees a second (400 in the 32-bit app, off
+elsewhere, 720 at most), added to the stick's look in `player_control.c`
+(`halo_linux_quick_turn`, `xinput_sdl.c`) before the stun and the magnetism,
+which slow it as they slow the stick's. Local input only: nothing machines
+must agree on.
+
+The 8BitDo Ultimate 2's paddles over Bluetooth, as the user found on the
+box: the left one is Android's BUTTON_Z (SDL's joystick button 18), the
+right one BUTTON_C (17): the defaults in the Android app, with SDL's named
+paddles. (The first guess, from SDL's mappings of the Ultimate 2C, had them
+the other way round.) For another controller: with the turn on, the log
+names each unnamed button the first time it is pressed (`gamepad: buttonN
+pressed`); `input.quick_turn_left` and `input.quick_turn_right` take
+`buttonN`. The host reads raw joystick buttons for the guest through
+`host_sdl_gamepad_button` (0x100 + N).
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
