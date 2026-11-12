@@ -176,6 +176,9 @@ ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
         # 64-bit file offsets in bionic's calls (lseek, mmap, struct stat):
         # the guest's, and the maps' sizes, are 64-bit
         "host_flags": ["-D_FILE_OFFSET_BITS=64"],
+        # ELF objects from the compiler: its bitcode can be linked as one
+        # module (configure.py --android-guest-lto)
+        "lto": True,
     },
 }
 
@@ -526,6 +529,19 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         f"-isystem {MUSL_DIR}/include",
     ]
     guest_abi = " ".join(spec["abi_flags"] + configuration_defines(sln))
+    # configure.py --android-guest-lto: the game, the platform layer, the
+    # maths and the vendored libraries as bitcode, optimised as one module at
+    # the link (as the Linux and Windows builds' --lto=full), so that the
+    # game's small functions are inlined across its files. The guest's C
+    # library and runtime stay ordinary objects: their memcpy and the like
+    # must not be recognised as the calls they implement. The linker is the
+    # guest compiler's own, which reads its bitcode (the NDK's may be older).
+    guest_lto = bool(getattr(sln, "android_guest_lto", False))
+    if guest_lto and not spec.get("lto"):
+        print(f"--android-guest-lto: not for {abi} (its objects are converted from Mach-O assembly); "
+              "building it without", file=sys.stderr)
+        guest_lto = False
+    lto_flags = "-flto=full" if guest_lto else ""
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [*spec["tools"], *generated_headers]
     # profile-guided optimisation with the Linux build's profile (committed,
@@ -577,7 +593,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     # layer only (not musl or the maths), such as a diagnostic build's checks
     guest_extra = getattr(sln, "android_guest_cflags", None) or ""
     game_cflags = " ".join([
-        guest_abi, guest_code, " ".join(game_flags), profile_flags,
+        guest_abi, guest_code, " ".join(game_flags), profile_flags, lto_flags,
         f"-include {prefix_header}", f"-include {semantics_header}",
         f"-I{LINUX_DIR}/include",
         # the headers of the port's own game units (port/linux/game), for the
@@ -600,7 +616,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     # the platform layer shared with Linux, and the guest runtime
     platform_cflags = " ".join([
         guest_abi, guest_code, "-std=gnu11", "-D_GNU_SOURCE", "-DHALO_LINUX_PLATFORM_LAYER", "-w", profile_flags,
-        f"-include {prefix_header}", f"-include {platform_semantics_header}",
+        lto_flags, f"-include {prefix_header}", f"-include {platform_semantics_header}",
         f"-I{LINUX_DIR}/src", f"-I{LINUX_DIR}/include", f"-I{PORT_DIR}/guest/runtime",
         f"-I{PORT_DIR}/include", f"-I{TOML_DIR}", f"-I{EXPAT_DIR}", f"-I{KCP_DIR}", f"-I{MONOCYPHER_DIR}",
         f"-I{ZLIB_DIR}", "-Isource -Isource/cseries",
@@ -625,7 +641,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     # voice chat's codec (port/third_party/opus), with the guest's ABI and C
     # library
     for source in opus_sources():
-        objects.append(guest_object(source, " ".join([opus_cflags(guest_abi), *libc_includes])))
+        objects.append(guest_object(source, " ".join([opus_cflags(guest_abi), lto_flags, *libc_includes])))
     # internet play's signatures, for public games' listings
     # (port/third_party/monocypher; p2p_crypto.c)
     for name in ("monocypher.c", "monocypher-ed25519.c"):
@@ -639,7 +655,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     # the game's sin, pow and the rest, the same on every port
     # (port/include/halo_math.h)
     musl_math_cflags = " ".join([
-        guest_abi, "-std=gnu11", "-w", profile_flags, *libc_includes, f"-I{MUSL_MATH_DIR}/include",
+        guest_abi, "-std=gnu11", "-w", profile_flags, lto_flags, *libc_includes, f"-I{MUSL_MATH_DIR}/include",
         f"-include {MUSL_MATH_DIR}/include/libm.h",
     ])
     for source in musl_math_sources():
@@ -661,7 +677,8 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         if source.name in ("guest_thread.c", "guest_start.c"):
             objects.append(guest_object(source, runtime_internal_cflags))
         elif source.name == "guest_memory_watch.c":
-            objects.append(guest_object(source, platform_cflags))
+            # (of the runtime: an ordinary object)
+            objects.append(guest_object(source, platform_cflags.replace(" -flto=full ", " ")))
         else:
             objects.append(guest_object(source, runtime_cflags))
     objects.append(guest_object(guest_gl_c, runtime_cflags))
@@ -673,11 +690,21 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
     # ---------- the guest image
 
     linker_script = PORT_DIR / "guest" / "guest.ld"
+    guest_ld = "$android_ndk_bin/ld.lld"
+    if guest_lto:
+        # (emulated TLS, as the objects' -femulated-tls: the guest has no
+        # thread pointer for the compiler's own thread-local storage)
+        guest_ld = "$$($android_guest_cc -print-prog-name=ld.lld) --lto-O2 -mllvm -emulated-tls"
     n.rule(
         name=f"{p}_guest_link",
-        command=(f"$android_ndk_bin/ld.lld -m {spec['emulation']} -static -nostdlib -T {linker_script} "
+        command=(f"{guest_ld} -m {spec['emulation']} -static -nostdlib -T {linker_script} "
                  f"-Map $out.map -o $out @$out.rsp {libguestc} "
-                 f"$$(${p}_host_cc -print-libgcc-file-name)"),
+                 f"$$(${p}_host_cc -print-libgcc-file-name)"
+                 # (an image with a thread-local segment was linked without
+                 # emulated TLS, and would not run)
+                 + (" && if $android_ndk_bin/llvm-readelf -lW $out | grep -qw TLS; then "
+                    "echo '$out: has a TLS segment (the link ignored -emulated-tls)' >&2; exit 1; fi"
+                    if guest_lto else "")),
         description="ANDROID LINK $out",
         rspfile="$out.rsp",
         rspfile_content="$in_newline",

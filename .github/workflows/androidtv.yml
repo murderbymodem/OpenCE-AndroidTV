@@ -157,6 +157,8 @@ jobs:
           curl -fsSL -o llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh 22
           clang-22 --version
+          # (the guest's link-time optimisation links with it)
+          "$(clang-22 -print-prog-name=ld.lld)" --version
 
       - uses: actions/checkout@v4
 
@@ -195,6 +197,8 @@ jobs:
           HALO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CI_ANDROID_ABIS: armeabi-v7a
           CI_ANDROID_GUEST_CC: clang-22
+          # (the guest optimised as one module, linked by clang 22's ld.lld)
+          CI_ANDROID_GUEST_LTO: "1"
           CI_COMPILER_LAUNCHER: ccache
           CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |

@@ -97,6 +97,12 @@ parser.add_argument(
     "shift reports the guest's runtime logs (port/android/guest/runtime/guest_misc.c)",
 )
 parser.add_argument(
+    "--android-guest-lto",
+    action="store_true",
+    help="link-time optimisation of the 32-bit Android guest (armeabi-v7a): the game, the platform layer "
+    "and the maths optimised as one module, linked by the guest compiler's own ld.lld; slower links",
+)
+parser.add_argument(
     "--android-abis",
     type=str,
     default="arm64-v8a",
@@ -163,6 +169,7 @@ sln = SimpleNamespace(
     android_ndk=args.android_ndk,
     android_guest_cc=args.android_guest_cc,
     android_guest_cflags=args.android_guest_cflags,
+    android_guest_lto=args.android_guest_lto,
     android_abis=[abi.strip() for abi in args.android_abis.split(",") if abi.strip()],
     web_emcc=args.web_emcc,
 )

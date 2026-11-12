@@ -761,6 +761,18 @@ project's new commits are merged in, to keep the network version the same
 as the main project's, and built. CI_ANDROID_ABIS and CI_ANDROID_GUEST_CC
 give `tools/ci_build.py` the ABIs and the guest's compiler.
 
+`python configure.py --android-guest-lto` optimises the 32-bit guest at the
+link (`CI_ANDROID_GUEST_LTO` for `tools/ci_build.py`'s release builds, which
+the fork's workflow sets): the game, the platform layer, the maths and the
+vendored libraries are compiled to LLVM bitcode and optimised as one module,
+as the Linux and Windows builds are, so that the game's small functions are
+inlined across its files. The guest's C library and runtime stay ordinary
+objects. The link is done by the guest compiler's own `ld.lld` (`clang
+-print-prog-name=ld.lld`), which reads its bitcode, and fails if the image
+has a thread-local segment (the guest's thread-local storage is emulated).
+The 64-bit guest, whose objects are converted from Mach-O assembly, is built
+without.
+
 32-bit ARM, unlike AArch64, stops a program at some unaligned accesses
 (floating-point and double-word loads and stores of addresses that are not
 a multiple of 4). Such an access is a SIGBUS in logcat (tag `halo`), with
