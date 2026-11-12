@@ -1,4 +1,4 @@
-# OpenCE-AndroidTV - Halo: Combat Evolved for 32-bit AndroidTV boxes
+# OpenCE-AndroidTV - Halo: Combat Evolved for 32-bit AndroidTV / GoogleTV boxes
 
 <p align="center">
   <img src="port/assets/icon/opence-icon.png" alt="OpenCE" width="128">
