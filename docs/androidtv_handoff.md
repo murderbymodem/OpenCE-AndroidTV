@@ -4,7 +4,8 @@ State of the 32-bit Android (armeabi-v7a) port in the fork
 `murderbymodem/OpenCE-AndroidTV`, branch `armeabi-v7a` (the default branch;
 `main` is kept as a plain mirror of upstream `OpenCommunityEdition/OpenCE`).
 Test device: Onn 4K Pro Gen 2 (2026), Amlogic S905X5M (4x Cortex-A55), Mali-G310,
-OpenGL ES 3.2, Android 14, 32-bit userland, 3 GB RAM.
+OpenGL ES 3.2, Android 14, 32-bit userland, 3 GB RAM; and the Onn 4K Plus
+(2026), the same but 2 GB RAM.
 
 ## What works
 
@@ -76,15 +77,17 @@ Remaining costs per busy frame: ~200-350 draws at ~14 us each, ~400
 glUniform4fv, ~400 buffer writes; shader links of 50-90 ms on first use of an
 effect. Memory: game process ~563 MB PSS, 343 MB of it GL (textures etc.).
 
-## Branch `claude/androidtv-optimizations` (not yet tested on the box)
+## The optimisation branch (merged 2026-11-12)
 
-Five changes, each its own commit, built here (`ninja android`,
-armeabi-v7a release) and by the workflow (clang 22, PGO, LTO), but not run
-on a device. Test the branch's build (Actions, Android TV, Run workflow,
-branch `claude/androidtv-optimizations`: the run's artifacts, no release)
-before merging it into `armeabi-v7a`, whose builds the app's updater
-installs. Goal agreed with the user: run on any 32-bit Android TV
-hardware, tuned for the Onn 4K Pro and Onn 4K Plus (2026).
+Five changes from `claude/androidtv-optimizations`, each its own commit,
+merged into `armeabi-v7a` after the user played a multiplayer match with
+the branch's build on the Onn 4K Plus without problems (frame drops remain
+with many players and explosions on screen, less often than before). Not
+yet measured: fps against the previous release, ARMv7 against ARMv8
+(`debug.halo.guest_image`), the second run's shader cache counts, and
+whether the log's `processor:` line says ARMv8 on both boxes. Goal agreed
+with the user: run on any 32-bit Android TV hardware, tuned for the Onn 4K
+Pro and Onn 4K Plus (2026).
 
 - Shader cache: `display.shader_cache`, the desktop's program cache on
   disk, now runs in the Android app, default true in the 32-bit app. First
