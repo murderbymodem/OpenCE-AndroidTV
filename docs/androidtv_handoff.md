@@ -179,6 +179,29 @@ Not yet run on a device. On the box, also set `audio.resampler = "xbox"`
 take another 40% off the mixer at the cost of the Xbox's 3D filters, and
 should not be needed once the lock is fair.
 
+Result on the box (the user's fourth recording, the branch's build): still
+dips, and the recording caught one. For 1.5 s the mixer's thread was at
+87-88% of a core while the main thread fell from ~70% to ~30% (its Mali
+share from ~20% to ~5%): it was waiting, not working. The gate alone made
+each of a frame's sound calls wait out a 128-frame turn (2.4 ms at that
+load). Two more changes in the branch:
+
+- the mix stays out while a burst of the game's calls lasts (it waits until
+  none has passed the gate for 60 us, at most eight times a turn);
+- `audio.hrtf` defaults to false in the 32-bit app (about 40% of the mixer).
+
+The user's log also says `settings: cannot write .../config.toml` and
+`menus: could not set audio.resampler`: the file was pushed with adb and
+the app cannot write it, so it still says `sinc` and no setting changed in
+the menus is kept. Fix on the box: pull a copy, delete the file with adb,
+start the app (it writes a new one with today's defaults), set things again
+in the menus. Settings added since (`audio.hrtf` among them) take their
+default at every start there, so the new default applies at once.
+
+The branch build's guest image could not be fetched here (Actions
+artifacts come from a host the session's network does not allow), so that
+recording's guest samples are unsymbolized; releases' assets can be.
+
 If drops remain after this, record again: the next suspects are the Mali
 driver's share of the main thread and the GL thread idea below.
 
