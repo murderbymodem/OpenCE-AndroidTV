@@ -1414,7 +1414,8 @@ static const struct config_setting config_settings[] =
 		"Upload textures again every time they are used." },
 	{ "debug.sample_seconds", _config_real, "0.0", "HALO_SAMPLE", _environment_value, _platform_android,
 		"Log where every game thread is this often, in seconds (read by the\n"
-		"app, port/android/host/host_debug.c); 0 never." },
+		"app, port/android/host/host_debug.c): its program counter and callers.\n"
+		"0.02 for a profile, whole seconds to find a hang; 0 never." },
 	{ "debug.memory_watch", _config_boolean, "true", NULL, _environment_value, _platform_android,
 		"Notice the game's writes to cached textures and vertices by page\n"
 		"protection; false compares page contents once a frame instead, which is\n"

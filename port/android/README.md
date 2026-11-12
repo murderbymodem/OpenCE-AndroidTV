@@ -676,7 +676,12 @@ and reload, address reuse and allocation failure.
   `llvm-symbolizer --obj=build/android/halo_guest.elf <address>`.
 - Set `sample_seconds = <seconds>` in `[debug]` of `config.toml`. The log
   then shows the program counter and the frame chain of each guest thread
-  at this interval. This finds hangs on devices without root access.
+  at this interval. This finds hangs on devices without root access. A
+  fraction of a second (`0.02`, a hundredth at least) makes it a profile
+  with each sample's callers, which simpleperf cannot give of the 32-bit
+  guest: record `adb logcat -s halo` to a file while playing, and count the
+  functions of the `sample tid` lines' addresses (the first is where the
+  thread was, the rest its callers, innermost first).
 - Set `gl_debug = true` in `[debug]` of `config.toml`. The log then shows
   the OpenGL ES errors.
 - The log says which write tracking the app uses: "page protection"
