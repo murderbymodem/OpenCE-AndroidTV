@@ -92,7 +92,7 @@ Multiplayer rule: change nothing in the simulation or network messages; keep
 
 - CI: `.github/workflows/androidtv.yml`. Push to `armeabi-v7a` -> clang 22
   (apt.llvm.org) + PGO (`pgo/halo_linux.profdata`), release `build-<run+100>`
-  with `halo-android-release.zip`, latest, last five kept. Daily 07:41 UTC
+  with `halo-android-release.zip` and `halo-android-debug.zip`, latest, last five kept. Daily 07:41 UTC
   sync merges upstream main (issue on conflict). Upstream's Build and Server
   image workflows are disabled in the fork. Secrets: `ANDROID_KEYSTORE_BASE64`,
   `ANDROID_KEYSTORE_PASSWORD`, optional `SYNC_TOKEN` (fine-grained PAT,

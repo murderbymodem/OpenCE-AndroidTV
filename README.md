@@ -6,6 +6,7 @@
 
 
 <p align="center">
+  <a href="https://github.com/murderbymodem/OpenCE-AndroidTV/releases/latest"><img src="https://img.shields.io/github/v/release/murderbymodem/OpenCE-AndroidTV?label=Download%20AndroidTV&style=for-the-badge" alt="Download for AndroidTV"></a>
   <a href="https://github.com/OpenCommunityEdition/OpenCE/releases/latest"><img src="https://img.shields.io/github/v/release/OpenCommunityEdition/OpenCE?label=Download&style=for-the-badge" alt="Download"></a>
   <a href="https://halocombatevolved.com/"><img src="https://img.shields.io/badge/Play-in_browser-blue?style=for-the-badge" alt="Play in browser"></a>
   <a href="https://discord.gg/9gqcHyr5km"><img src="https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
@@ -45,10 +46,13 @@ storage for the site - nothing is uploaded ([port/web/README.md](port/web/README
 
 GitHub Actions builds the game for each commit. 
 
-Builds for latest release:
+Builds for latest release (the AndroidTV row is this fork's own release, built by
+[androidtv.yml](.github/workflows/androidtv.yml) for each commit to `armeabi-v7a`;
+the others are the main project's):
 
 | Platform | Release | Debug | Guide |
 | --- | --- | --- | --- |
+| **AndroidTV 32-bit** (armeabi-v7a, this fork) | [halo-android-release.zip](https://github.com/murderbymodem/OpenCE-AndroidTV/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/murderbymodem/OpenCE-AndroidTV/releases/latest/download/halo-android-debug.zip) | [The 32-bit app](port/android/README.md#the-32-bit-app) |
 | Linux | [halo-linux-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-linux-release.zip) | [halo-linux-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-linux-debug.zip) | [Linux](port/linux/README.md) |
 | Windows | [halo-windows-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-windows-release.zip) | [halo-windows-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-windows-debug.zip) | [Windows](port/windows/README.md) |
 | Android | [halo-android-release.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-android-release.zip) | [halo-android-debug.zip](https://github.com/OpenCommunityEdition/OpenCE/releases/latest/download/halo-android-debug.zip) | [Android](port/android/README.md) |

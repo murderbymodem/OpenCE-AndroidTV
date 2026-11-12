@@ -660,8 +660,9 @@ The fork that maintains the 32-bit app builds and publishes it with
 `.github/workflows/androidtv.yml`: each push to its `armeabi-v7a` branch is
 built with clang 22 (so that the profiles in `pgo/` optimise it), signed
 with the `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets'
-key and published as a release `build-<n>` with `halo-android-release.zip`,
-which the app's self-updater of those builds installs; every day the main
+key and published as a release `build-<n>` with `halo-android-release.zip`
+and `halo-android-debug.zip`, which the app's self-updater of those builds
+installs (each its own kind); every day the main
 project's new commits are merged in, to keep the network version the same
 as the main project's, and built. CI_ANDROID_ABIS and CI_ANDROID_GUEST_CC
 give `tools/ci_build.py` the ABIs and the guest's compiler.
