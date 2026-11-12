@@ -104,6 +104,19 @@ shadows' changes of render target (port/linux/game/object_shadows.c) */
 #define OBJECT_SHADOWS_DEFAULT "true"
 #endif
 
+/* display.vsync and display.max_fps: the 32-bit Android app's TV boxes draw
+a network game at 30 to 55 frames a second, and a steady 30 (the game's own
+tick rate), paced by max_fps with vsync off, plays better there than the
+display's refresh with dips; Android composites every frame, so it does not
+tear. Elsewhere, vsync. */
+#ifdef HALO_ARM32_GUEST
+#define VSYNC_DEFAULT "false"
+#define MAX_FPS_DEFAULT "30"
+#else
+#define VSYNC_DEFAULT "true"
+#define MAX_FPS_DEFAULT "0"
+#endif
+
 static const struct config_setting config_settings[] =
 {
 	{ "display.fullscreen", _config_boolean, "true", "HALO_FULLSCREEN", _environment_value, _platform_desktop,
@@ -134,11 +147,13 @@ static const struct config_setting config_settings[] =
 	{ "display.screen_width", _config_integer, "0", "HALO_SCREEN_WIDTH", _environment_value, _platform_android,
 		"Columns of the 480-line picture: 0 for the display's shape, 640 for the\n"
 		"Xbox's 4:3." },
-	{ "display.vsync", _config_boolean, "true", "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
-		"Wait for the display between frames; false draws as fast as possible." },
-	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_all,
+	{ "display.vsync", _config_boolean, VSYNC_DEFAULT, "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
+		"Wait for the display between frames; false draws as fast as possible\n"
+		"(up to max_fps). Off by default in the 32-bit Android app." },
+	{ "display.max_fps", _config_integer, MAX_FPS_DEFAULT, "HALO_MAX_FPS", _environment_value, _platform_all,
 		"With vsync off, the most frames a second: 0 for twice the display's\n"
-		"refresh rate, -1 for no limit (which can hang some Intel graphics)." },
+		"refresh rate, -1 for no limit (which can hang some Intel graphics).\n"
+		"30 by default in the 32-bit Android app, a steady 30 on TV boxes." },
 	{ "display.frames_in_flight", _config_integer, "3", "HALO_FRAMES_IN_FLIGHT", _environment_value,
 		_platform_desktop,
 		"The most frames the GPU has queued (1 to 8): a frame waits for the GPU\n"
