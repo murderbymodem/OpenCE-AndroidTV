@@ -29,6 +29,32 @@ them, at the cost of a signal each); elsewhere it is nothing. */
 #define HALO_UNALIGNED
 #endif
 
+/* ---------- rounding on ARMv7
+
+The game rounds a real number to an integer with __builtin_rint (fast_ftol,
+the colours' packing: x87's FISTP in the original), which is an instruction
+on x86, AArch64 and ARMv8 but a call to rint on ARMv7, with the number moved
+through core registers on the way in and out (the softfp convention). The
+32-bit Android guest's ARMv7 image rounds in line instead, as that rint
+does: below 2^52 a double plus and minus 2^52 is the nearest integer, ties
+to even, under the default rounding mode, and takes the number's sign (so
+that -0.25 rounds to -0); larger numbers are integers already, and a NaN
+stays one. The result is rint's, bit for bit. */
+#if defined(HALO_ARM32_GUEST) && !defined(__ARM_FEATURE_DIRECTED_ROUNDING)
+static __inline__ double halo_arm32_rint(double value)
+{
+	double magnitude = __builtin_fabs(value);
+
+	if (magnitude < 4503599627370496.0)
+	{
+		magnitude = (magnitude + 4503599627370496.0) - 4503599627370496.0;
+		value = __builtin_copysign(magnitude, value);
+	}
+	return value;
+}
+#define __builtin_rint(value) halo_arm32_rint(value)
+#endif
+
 /* ---------- WebAssembly: no return addresses
 
 WebAssembly code has no address to return to: Emscripten makes one up by

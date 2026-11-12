@@ -31,6 +31,11 @@ typedef Elf32_Phdr guest_phdr;
 #endif
 
 struct host_guest_image host_image;
+#ifdef __arm__
+const char *host_guest_image_name = "halo_guest_armv7.elf";
+#else
+const char *host_guest_image_name = "halo_guest.elf";
+#endif
 
 static void missing_import(void)
 {

@@ -33,6 +33,7 @@ that runs here.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/auxv.h>
 #include <sys/system_properties.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -261,6 +262,44 @@ static int native_bridge_active(void)
 	return value[0] && strcmp(value, "0") != 0;
 }
 
+#ifdef __arm__
+/* The 32-bit app has two images of the game (tools/android_build.py): one
+of ARMv7 code, which every device of the ABI runs, and one of ARMv8 code
+(AArch32), which divides and rounds with the processor's own instructions.
+Most 32-bit Android TV boxes have a 64-bit processor under a 32-bit Android
+and take the second. The kernel names an ARMv8 processor's platform "v8l"
+to a 32-bit program, and a 32-bit kernel that says "v7l" of one still lists
+its CRC32 instructions, which only ARMv8 has; a translator's processor is
+not asked. adb shell setprop debug.halo.guest_image armv7 (or armv8) takes
+that image whatever the processor, for comparing them; "" goes back. */
+#ifndef HWCAP2_CRC32
+#define HWCAP2_CRC32 (1 << 4)
+#endif
+#ifndef HWCAP_IDIVA
+#define HWCAP_IDIVA (1 << 17)
+#endif
+
+static int processor_is_armv8(void)
+{
+	char forced[PROP_VALUE_MAX] = "";
+	const char *platform = (const char *)getauxval(AT_PLATFORM);
+	unsigned long hwcap = getauxval(AT_HWCAP), hwcap2 = getauxval(AT_HWCAP2);
+	int armv8;
+
+	if (__system_property_get("debug.halo.guest_image", forced) > 0 &&
+		(!strcmp(forced, "armv7") || !strcmp(forced, "armv8")))
+	{
+		host_logf(HOST_LOG_WARN, "guest image: %s (debug.halo.guest_image)", forced);
+		return !strcmp(forced, "armv8");
+	}
+	armv8 = !native_bridge_active() && (hwcap & HWCAP_IDIVA) &&
+		((platform && !strncmp(platform, "v8", 2)) || (hwcap2 & HWCAP2_CRC32));
+	host_logf(HOST_LOG_INFO, "processor: platform %s, hwcap %08lx, hwcap2 %08lx: %s", platform ? platform : "?",
+		hwcap, hwcap2, armv8 ? "ARMv8" : "ARMv7");
+	return armv8;
+}
+#endif
+
 /* POSIX TZ for the current local offset (the guest's musl has no zone
 database) */
 static void time_zone(char *buffer, size_t size)
@@ -403,7 +442,17 @@ static void *game_main(void *unused)
 
 	/* (the 32-bit app's image is the 32-bit ARM guest: tools/android_build.py) */
 #ifdef __arm__
-	image = SDL_LoadFile("halo_guest_armv7.elf", &image_size);
+	/* (the ARMv8 image where the processor is one, and the app has it) */
+	image = NULL;
+	if (processor_is_armv8())
+	{
+		image = SDL_LoadFile("halo_guest_armv8.elf", &image_size);
+		if (image)
+			host_guest_image_name = "halo_guest_armv8.elf";
+	}
+	if (!image)
+		image = SDL_LoadFile("halo_guest_armv7.elf", &image_size);
+	host_logf(HOST_LOG_INFO, "guest image: %s", host_guest_image_name);
 #else
 	image = SDL_LoadFile("halo_guest.elf", &image_size);
 #endif

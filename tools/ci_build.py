@@ -105,6 +105,10 @@ def main() -> int:
     # clang 22 reads the profiles in pgo/
     if args.platform == "android" and os.environ.get("CI_ANDROID_GUEST_CC"):
         configure += ["--android-guest-cc", os.environ["CI_ANDROID_GUEST_CC"]]
+    # link-time optimisation of the 32-bit Android guest (configure.py
+    # --android-guest-lto), of release builds where CI_ANDROID_GUEST_LTO is set
+    if args.platform == "android" and args.config == "release" and os.environ.get("CI_ANDROID_GUEST_LTO"):
+        configure.append("--android-guest-lto")
     launcher = os.environ.get("CI_COMPILER_LAUNCHER")
     if launcher:
         configure += ["--compiler-launcher", launcher]

@@ -50,6 +50,7 @@ The 32-bit AndroidTV app has been tested on:
 | Device | CPU | GPU | RAM |
 | --- | --- | --- | --- |
 | onn 4K Pro Streaming Device Gen 2 (2026), Android 14 (32-bit) | Amlogic S905X5M, 4x Cortex-A55 | Arm Mali-G310 (OpenGL ES 3.2) | 3 GB |
+| onn 4K Plus Streaming Device (2026), Android 14 (32-bit) | Amlogic S905X5M, 4x Cortex-A55 | Arm Mali-G310 (OpenGL ES 3.2) | 2 GB |
 
 ## Download
 

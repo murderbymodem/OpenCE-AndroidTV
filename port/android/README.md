@@ -8,7 +8,8 @@
 Android instead, for devices whose Android runs only 32-bit apps (many
 Android TV devices, such as the Onn 4K Pro, even with a 64-bit processor);
 `--android-abis arm64-v8a,armeabi-v7a` makes one app with both. The
-32-bit app needs an ARMv7-A processor with NEON. Refer to "The 32-bit app"
+32-bit app needs an ARMv7-A processor with NEON, and runs ARMv8 code on
+an ARMv8 one. Refer to "The 32-bit app"
 below.
 
 The game shows its graphics with OpenGL ES 3. It plays sound through SDL3
@@ -355,6 +356,7 @@ These settings are only for Android:
 | `display.resolution_scaling` | Also Linux's, with another default on Android. `"original"` (the default): the game draws the 480 lines of the Xbox, which the display scales up. `"native"`: the game draws at the display's resolution (1080 lines on a 1080p phone). `"75%"`, `"50%"` or `"25%"`: that part of the display's resolution each way, scaled up: less for the GPU to draw, for more frames a second and less heat. Video Setup's Resolution Scaling sets it, from the next frame. |
 | `debug.sample_seconds` | Refer to "Find problems". |
 | `debug.memory_watch` | `true` (the default): the app notices the game's writes to cached textures by page protection. `false`: it compares page contents once a frame instead, which is slower. Geometry uses the streaming path in either mode. Refer to "Limits". |
+| `display.shader_cache` | `true` in the 32-bit app (armeabi-v7a), `false` in the 64-bit one: keep the GPU programs the game links in `shader_cache/` beside `config.toml`'s saves and load each from there the next time, instead of linking it again (50-90 ms each on a Mali-G310 TV box, a stalled frame the first time an effect is drawn in each run). The file is the driver's own: a system update starts another. `debug.gpu_stats` logs how many programs came from it. Refer to the settings table of `port/linux/README.md`. |
 | `debug.gl_profile` | `false` (the default). `true`, on the 32-bit app (armeabi-v7a): every 120 frames the log has the OpenGL ES functions that took the most time in the driver, with their calls and time a frame, and the app's own GL helpers and the buffer swap. Slower while on; for finding where a frame's CPU time goes, which a profiler cannot name in drivers without symbols. |
 | `debug.gl_refresh_state` | `false` (the default). `true`: every OpenGL value is set again for each draw, whatever the renderer remembers having set. Slower; for finding whether a GPU driver and the renderer disagree on what is set, which shows as black or missing surfaces. |
 
@@ -744,6 +746,31 @@ convention), in an ordinary 32-bit app:
 - `HALO_ARM32_GUEST` and `HALO_ANDROID_GUEST` are defined for it, not
   `HALO_ARM64_GUEST`.
 
+The 32-bit app has a second image of the game, `halo_guest_armv8.elf`
+(`build/android/armv8`): the same sources compiled for ARMv8's 32-bit
+state (`-march=armv8-a -mfpu=neon-fp-armv8 -mtune=cortex-a55`). Most 32-bit
+Android TV boxes have a 64-bit processor under a 32-bit Android (the Onn 4K
+boxes' Cortex-A55, for example), and there the compiler's code divides with
+the processor's instruction and rounds with VRINT, where ARMv7 code calls a
+routine for each (some 900 places in the game). The host starts the ARMv8
+image where the processor says it is ARMv8 (the kernel's platform name
+`v8l`, or ARMv8's CRC32 instructions in its capabilities; never under an
+ARM translator), and the ARMv7 image everywhere else, so the app runs on
+every armeabi-v7a device with NEON. Both compute the same results: every
+instruction the ARMv8 image gains is exact, and neither fuses a multiply
+and an add. The log (tag `halo`) names the processor and the image:
+`guest image: halo_guest_armv8.elf`; addresses in a crash report are
+symbolized against the build's file of that name.
+`adb shell setprop debug.halo.guest_image armv7` (or `armv8`) starts that
+image whatever the processor, for comparing the two; `""` goes back to the
+processor's.
+
+Both images take `memcpy` and `memmove` from the guest runtime
+(`guest/runtime/guest_string.c`: sixteen bytes at a time through NEON
+registers, at any alignment) in place of musl's generic C ones, and the
+ARMv7 image rounds real numbers to integers in line
+(`halo_linux_prefix.h`, "rounding on ARMv7") in place of a call to `rint`.
+
 In a 32-bit process the game, ART, the graphics driver and the app share
 the 4 GB (or 3 GB) of address space, so the fixed ranges at 0x80000000 are
 more often taken by the time the game loads. The app then says so and
@@ -760,8 +787,21 @@ project's new commits are merged in, to keep the network version the same
 as the main project's, and built. CI_ANDROID_ABIS and CI_ANDROID_GUEST_CC
 give `tools/ci_build.py` the ABIs and the guest's compiler.
 
+`python configure.py --android-guest-lto` optimises the 32-bit guest at the
+link (`CI_ANDROID_GUEST_LTO` for `tools/ci_build.py`'s release builds, which
+the fork's workflow sets): the game, the platform layer, the maths and the
+vendored libraries are compiled to LLVM bitcode and optimised as one module,
+as the Linux and Windows builds are, so that the game's small functions are
+inlined across its files. The guest's C library and runtime stay ordinary
+objects. The link is done by the guest compiler's own `ld.lld` (`clang
+-print-prog-name=ld.lld`), which reads its bitcode, and fails if the image
+has a thread-local segment (the guest's thread-local storage is emulated).
+The 64-bit guest, whose objects are converted from Mach-O assembly, is built
+without.
+
 32-bit ARM, unlike AArch64, stops a program at some unaligned accesses
 (floating-point and double-word loads and stores of addresses that are not
 a multiple of 4). Such an access is a SIGBUS in logcat (tag `halo`), with
 the guest's address: `llvm-addr2line -e build/android/armv7/halo_guest_armv7.elf <address>`
+(or `build/android/armv8/halo_guest_armv8.elf`, as the log's `guest image:` line says)
 names the line.

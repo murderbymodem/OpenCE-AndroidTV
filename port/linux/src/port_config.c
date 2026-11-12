@@ -104,6 +104,15 @@ shadows' changes of render target (port/linux/game/object_shadows.c) */
 #define OBJECT_SHADOWS_DEFAULT "true"
 #endif
 
+/* display.shader_cache: the desktop's, and the 32-bit Android app's, whose
+TV boxes take 50-90 ms to link a program; the 64-bit app links each run, as
+before (OpenGL ES drivers' binaries are not all to be trusted) */
+#if defined(HALO_ANDROID) && !defined(HALO_ARM32_GUEST)
+#define SHADER_CACHE_DEFAULT "false"
+#else
+#define SHADER_CACHE_DEFAULT "true"
+#endif
+
 /* display.vsync and display.max_fps: the 32-bit Android app's TV boxes draw
 a network game at 30 to 55 frames a second, and a steady 30 (the game's own
 tick rate), paced by max_fps with vsync off, plays better there than the
@@ -301,7 +310,7 @@ static const struct config_setting config_settings[] =
 		"screen's top right, with bars (the host: its slowest player's), and\n"
 		"\"Connection problem\" when the host has sent nothing for two seconds;\n"
 		"the scoreboard's pings in the same colours, as this machine times them." },
-	{ "display.shader_cache", _config_boolean, "true", "HALO_SHADER_CACHE", _environment_value, _platform_desktop,
+	{ "display.shader_cache", _config_boolean, SHADER_CACHE_DEFAULT, "HALO_SHADER_CACHE", _environment_value, _platform_all,
 		"Keep the GPU programs the game links under the save root (shader_cache),\n"
 		"and load them from there next time instead of linking them again, which\n"
 		"stalls a frame on some drivers; false links each every run." },

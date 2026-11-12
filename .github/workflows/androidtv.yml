@@ -157,6 +157,8 @@ jobs:
           curl -fsSL -o llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh 22
           clang-22 --version
+          # (the guest's link-time optimisation links with it)
+          "$(clang-22 -print-prog-name=ld.lld)" --version
 
       - uses: actions/checkout@v4
 
@@ -195,6 +197,8 @@ jobs:
           HALO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           CI_ANDROID_ABIS: armeabi-v7a
           CI_ANDROID_GUEST_CC: clang-22
+          # (the guest optimised as one module, linked by clang 22's ld.lld)
+          CI_ANDROID_GUEST_LTO: "1"
           CI_COMPILER_LAUNCHER: ccache
           CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
@@ -221,6 +225,7 @@ jobs:
           for apk in dist/halo-android-release/app-release.apk dist/halo-android-debug/app-debug.apk; do
             unzip -l "$apk" | grep -q "lib/armeabi-v7a/libmain.so"
             unzip -l "$apk" | grep -q "assets/halo_guest_armv7.elf"
+            unzip -l "$apk" | grep -q "assets/halo_guest_armv8.elf"
             ! unzip -l "$apk" | grep -q "lib/arm64-v8a/"
           done
 

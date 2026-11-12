@@ -629,7 +629,7 @@ struct program_entry
 #define FRAGMENT_BUCKETS 1024
 #define PROGRAM_BUCKETS 1024
 
-/* ---------- the program cache on disk (desktop)
+/* ---------- the program cache on disk (desktop, and the Android app)
 
 Linking a program is where the drivers do most of their work: on Intel
 graphics on Windows up to 70 ms a program, and a large Custom Edition map
@@ -641,8 +641,15 @@ run or another, it is loaded from that instead of linked, in under 2 ms
 (display.shader_cache). The binaries share one file, opened once: on Windows
 opening or making a file of its own for each took 3-110 ms (the antivirus's
 look at it), as much as the link it saved. A binary the driver refuses is
-forgotten and the program linked again. OpenGL ES keeps its programs to
-itself: its drivers' binaries are not all to be trusted. */
+forgotten and the program linked again.
+
+OpenGL ES drivers' binaries are not all to be trusted, so the Android app
+keeps the cache only where the setting's default says so: the 32-bit app,
+whose TV boxes (a Mali GPU) take 50-90 ms to link a program the first time
+an effect is drawn. WebGL has no program binaries. */
+#if !defined(HALO_GLES) || defined(HALO_ANDROID)
+#define HALO_PROGRAM_CACHE 1
+#endif
 
 /* each compiled shader's GLSL hash, by its name (shader_hash_set) */
 static unsigned long long *shader_hashes;
@@ -678,7 +685,7 @@ static void shader_hash_set(GLuint shader, const char *source)
 	shader_hashes[shader] = source_hash(source);
 }
 
-#ifndef HALO_GLES
+#ifdef HALO_PROGRAM_CACHE
 static unsigned long long shader_hash(GLuint shader)
 {
 	return shader < shader_hashes_size ? shader_hashes[shader] : 0;
@@ -1226,8 +1233,8 @@ static struct
 	unsigned long most_draws, slowest_frame;
 	/* (draws counted when this frame began) */
 	unsigned long frame_first_draw;
-	/* programs linked (OpenGL ES, which keeps no cache of them), and the
-	time the links took, the most in one, in ms */
+	/* programs linked (OpenGL ES; not those loaded from the shader cache),
+	and the time the links took, the most in one, in ms */
 	unsigned long links, link_ms, slowest_link_ms;
 } stats;
 
@@ -2638,8 +2645,10 @@ static void gl_initialize(void)
 #ifdef HALO_ARM32_GUEST
 	guest_gl_profile_on = config_boolean("debug.gl_profile");
 #endif
-#ifndef HALO_GLES
+#ifdef HALO_PROGRAM_CACHE
 	program_cache_initialize();
+#endif
+#ifndef HALO_GLES
 	frame_pacing.limit = config_integer("display.frames_in_flight");
 	if (frame_pacing.limit < 0)
 		frame_pacing.limit = 0;
@@ -3989,13 +3998,18 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 	if (!vertex_shader || !fragment_shader)
 		return NULL;
 
-#ifndef HALO_GLES
+#ifdef HALO_PROGRAM_CACHE
 	entry->program = program_cache_load(shader_hash(vertex_shader), shader_hash(fragment_shader));
 	if (!entry->program)
 	{
 		/* (linked as xgpu_link_program does, keeping its binary) */
 		GLint status = 0;
+#ifdef HALO_GLES
+		struct timespec before, after;
+		unsigned long milliseconds;
 
+		clock_gettime(CLOCK_MONOTONIC, &before);
+#endif
 		entry->program = glCreateProgram();
 		glAttachShader(entry->program, vertex_shader);
 		glAttachShader(entry->program, fragment_shader);
@@ -4003,6 +4017,14 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 			glProgramParameteri(entry->program, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
 		glLinkProgram(entry->program);
 		glGetProgramiv(entry->program, GL_LINK_STATUS, &status);
+#ifdef HALO_GLES
+		clock_gettime(CLOCK_MONOTONIC, &after);
+		milliseconds = (unsigned long)((after.tv_sec - before.tv_sec) * 1000 + (after.tv_nsec - before.tv_nsec) / 1000000);
+		stats.links++;
+		stats.link_ms += milliseconds;
+		if (milliseconds > stats.slowest_link_ms)
+			stats.slowest_link_ms = milliseconds;
+#endif
 		if (!status)
 		{
 			char log[4096];
@@ -4017,6 +4039,7 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 		program_cache_store(entry->program, shader_hash(vertex_shader), shader_hash(fragment_shader));
 	}
 #else
+	/* (WebGL: no program binaries) */
 	{
 		struct timespec before, after;
 		unsigned long milliseconds;
@@ -8111,7 +8134,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 				device.frame, stats.texture_upload_us / 1000, stats.slowest_texture_upload_us / 1000);
 #endif
 		memset(&stats, 0, sizeof(stats));
-#ifndef HALO_GLES
+#ifdef HALO_PROGRAM_CACHE
 		{
 			static unsigned long shown = ~0UL;
 

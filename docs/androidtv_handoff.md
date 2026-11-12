@@ -4,7 +4,8 @@ State of the 32-bit Android (armeabi-v7a) port in the fork
 `murderbymodem/OpenCE-AndroidTV`, branch `armeabi-v7a` (the default branch;
 `main` is kept as a plain mirror of upstream `OpenCommunityEdition/OpenCE`).
 Test device: Onn 4K Pro Gen 2 (2026), Amlogic S905X5M (4x Cortex-A55), Mali-G310,
-OpenGL ES 3.2, Android 14, 32-bit userland, 3 GB RAM.
+OpenGL ES 3.2, Android 14, 32-bit userland, 3 GB RAM; and the Onn 4K Plus
+(2026), the same but 2 GB RAM.
 
 ## What works
 
@@ -76,15 +77,77 @@ Remaining costs per busy frame: ~200-350 draws at ~14 us each, ~400
 glUniform4fv, ~400 buffer writes; shader links of 50-90 ms on first use of an
 effect. Memory: game process ~563 MB PSS, 343 MB of it GL (textures etc.).
 
-## Next steps (agreed order)
+## The optimisation branch (merged 2026-11-12)
 
-1. Shader program binary cache on disk for GLES (and/or prelink at map load)
-   to remove first-use stutters.
-2. ARMv8 (AArch32) guest image alongside ARMv7, chosen at start by hwcap
-   (hardware divide, vrint for fast_ftol). Keep -ffp-contract=off.
-3. DXT3/DXT5 -> ASTC (currently decoded to RGBA32 on Mali): biggest memory win.
+Five changes from `claude/androidtv-optimizations`, each its own commit,
+merged into `armeabi-v7a` after the user played a multiplayer match with
+the branch's build on the Onn 4K Plus without problems (frame drops remain
+with many players and explosions on screen, less often than before). Not
+yet measured: fps against the previous release, ARMv7 against ARMv8
+(`debug.halo.guest_image`), the second run's shader cache counts, and
+whether the log's `processor:` line says ARMv8 on both boxes. Goal agreed
+with the user: run on any 32-bit Android TV hardware, tuned for the Onn 4K
+Pro and Onn 4K Plus (2026).
+
+- Shader cache: `display.shader_cache`, the desktop's program cache on
+  disk, now runs in the Android app, default true in the 32-bit app. First
+  run links and stores each program; later runs load it
+  (`shader_cache/<driver hash>.bin` under the save root). `debug.gpu_stats`
+  logs "programs: N from the shader cache, M linked ...". To check: play a
+  map twice with `debug.gpu_stats = true`; the second run should link
+  almost nothing and lose the first-use stutters. If rendering is wrong,
+  set `display.shader_cache = false` (and say so: the driver's binaries
+  would not be trustworthy).
+- Link-time optimisation of the guest: `configure.py --android-guest-lto`
+  (`CI_ANDROID_GUEST_LTO`, set by the workflow's release build). About half
+  the functions are inlined away. To check: fps and frame times against the
+  last release in the same Slayer game with `display.max_fps = 0`; the
+  log's unaligned fixup summary (inlining can make new unaligned sites: fix
+  the busy ones with `HALO_UNALIGNED`); a campaign level and a network game
+  for crashes (deeper inlining means larger stack frames). To build
+  without it, remove `CI_ANDROID_GUEST_LTO` from the workflow.
+- ARMv8 image: the app carries `halo_guest_armv8.elf` beside
+  `halo_guest_armv7.elf` and the host starts it where the processor is
+  ARMv8 (log: `processor: platform v8l ... ARMv8`, `guest image:
+  halo_guest_armv8.elf`). Hardware divide and VRINT/VCVT rounding in line
+  instead of ~600 calls to routines; `-mtune=cortex-a55`. To compare on the
+  box: `adb shell setprop debug.halo.guest_image armv7`, restart, measure;
+  `armv8`, restart, measure; `""` to go back. If the log says ARMv7 on the
+  Onn boxes, send the `processor:` line (the detection needs widening).
+  A network game between the two images (or with a PC) checks they stay in
+  step.
+- `memcpy`/`memmove` through NEON registers (both images,
+  `guest_string.c`), tested on x86 against the C library.
+- ARMv7 image only: `__builtin_rint` in line (`halo_linux_prefix.h`),
+  tested bit for bit against `rint`.
+
+Symbolizing: use the ELF the log's `guest image:` line names, from the same
+build (the APK's assets).
+
+## Next steps
+
+1. Measure the branch on the box (above), then a fresh simpleperf profile
+   of the ARMv8 LTO build: the remaining ideas below should be chosen from
+   it, not guessed.
+2. A GL thread: the main thread is ~88% busy and about half of that is
+   inside the Mali driver, while three of the four cores idle. Queuing the
+   frame's GL calls (the guest's generated entry points, `guest_gl.c`) to a
+   second thread would move the driver's time off the game's thread. The
+   largest possible gain left, and the largest change: calls that return
+   values must wait, and pointer arguments must be copied. Worth a design
+   pass before any code.
+3. DXT3/DXT5 -> ASTC (DXT1 already goes to ASTC: `display.dxt1_astc`):
+   biggest memory win.
 4. Merge consecutive small "immediate" draws (HUD/effects, 100-150/frame).
 5. Optional: batch object shadows into one atlas to bring shadows back cheaply.
+6. Smaller compiler-level items, each to be measured: release images
+   without frame pointers (r11 back as a register; crash reports and the
+   sampler would lose their call chains), `floorf`/`ceilf` in line in the
+   ARMv7 image (139 calls left), the hard-float convention inside the guest
+   (needs the compiler runtime rebuilt: lld refuses to mix it with the
+   NDK's softfp libgcc).
+7. Prelinking the programs at map load, for the first run's stutters (the
+   shader cache covers later runs).
 Multiplayer rule: change nothing in the simulation or network messages; keep
 `HALO_PORT_NETWORK_VERSION` as upstream's.
 
