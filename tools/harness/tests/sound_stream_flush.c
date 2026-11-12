@@ -8,6 +8,8 @@ static int refills,unlocks,events,resets,lock_depth;
 static unsigned long status[8],completed[8];
 #define mixer_lock 0
 #define pthread_mutex_lock(...) ((void)lock_depth++)
+/* (dsound_sdl.c takes the lock through its gate) */
+#define mixer_take() ((void)lock_depth++)
 #define pthread_mutex_unlock(...) ((void)lock_depth--)
 #define channel_get(i) (&dsound_globals.channels[i])
 #define sound_cache_sound_hardware_unlock(...) ((void)unlocks++)
