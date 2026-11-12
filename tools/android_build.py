@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .linux_build import (LINUX_PROFILE, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_INCLUDE,
                           compile_launcher, configuration_defines, game_defines_and_includes, game_sources,
@@ -190,6 +190,8 @@ ANDROID_ABIS: Dict[str, Dict[str, Any]] = {
         # 64-bit file offsets in bionic's calls (lseek, mmap, struct stat):
         # the guest's, and the maps' sizes, are 64-bit
         "host_flags": ["-D_FILE_OFFSET_BITS=64"],
+        # sixteen bytes at a time through NEON registers (guest_string.c)
+        "musl_exclude": ("string/memcpy.c", "string/memmove.c"),
         # ELF objects from the compiler: its bitcode can be linked as one
         # module (configure.py --android-guest-lto)
         "lto": True,
@@ -330,7 +332,7 @@ def fetch_third_party() -> None:
         subprocess.run(["git", "-C", str(SDL_DIR), "apply", str(SDL_ANDROID_MOUSE_PATCH.resolve())], check=True)
 
 
-def _musl_sources() -> List[Path]:
+def _musl_sources(exclude: Sequence[str] = ()) -> List[Path]:
     src = MUSL_DIR / "src"
     result = set()
     for directory in MUSL_DIRECTORIES:
@@ -344,7 +346,7 @@ def _musl_sources() -> List[Path]:
     sources = []
     for path in sorted(result):
         relative = path.relative_to(src).as_posix()
-        if relative in MUSL_EXCLUDE or any(relative.startswith(e + "/") for e in MUSL_EXCLUDE):
+        if relative in MUSL_EXCLUDE or relative in exclude or any(relative.startswith(e + "/") for e in MUSL_EXCLUDE):
             continue
         sources.append(path)
     return sources
@@ -595,7 +597,7 @@ def _generate_abi(n: Writer, sln: Any, abi: str, ndk: Path, toolchain: Path, sys
         f"-I{PORT_DIR}/guest/libc/src_include", f"-I{MUSL_DIR}/src/include",
         f"-I{MUSL_DIR}/src/internal", f"-I{libc_include}", f"-I{MUSL_DIR}/include",
     ])
-    musl_objects = [guest_object(source, musl_cflags, "musl") for source in _musl_sources()]
+    musl_objects = [guest_object(source, musl_cflags, "musl") for source in _musl_sources(spec.get("musl_exclude", ()))]
     libguestc = guest_dir / "libguestc.a"
     n.rule(
         name=f"{p}_ar",
