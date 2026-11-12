@@ -655,6 +655,16 @@ the 4 GB (or 3 GB) of address space, so the fixed ranges at 0x80000000 are
 more often taken by the time the game loads. The app then says so and
 writes `memory_map.txt` (refer to "Game data").
 
+The fork that maintains the 32-bit app builds and publishes it with
+`.github/workflows/androidtv.yml`: each push to its `armeabi-v7a` branch is
+built with clang 22 (so that the profiles in `pgo/` optimise it), signed
+with the `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD` secrets'
+key and published as a release `build-<n>` with `halo-android-release.zip`,
+which the app's self-updater of those builds installs; every day the main
+project's new commits are merged in, to keep the network version the same
+as the main project's, and built. CI_ANDROID_ABIS and CI_ANDROID_GUEST_CC
+give `tools/ci_build.py` the ABIs and the guest's compiler.
+
 32-bit ARM, unlike AArch64, stops a program at some unaligned accesses
 (floating-point and double-word loads and stores of addresses that are not
 a multiple of 4). Such an access is a SIGBUS in logcat (tag `halo`), with

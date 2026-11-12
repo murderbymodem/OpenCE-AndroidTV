@@ -100,6 +100,11 @@ def main() -> int:
     # CI_ANDROID_ABIS names others
     if args.platform == "android" and os.environ.get("CI_ANDROID_ABIS"):
         configure += ["--android-abis", os.environ["CI_ANDROID_ABIS"]]
+    # the clang the Android guest is compiled with (configure.py
+    # --android-guest-cc), clang unless CI_ANDROID_GUEST_CC names another:
+    # clang 22 reads the profiles in pgo/
+    if args.platform == "android" and os.environ.get("CI_ANDROID_GUEST_CC"):
+        configure += ["--android-guest-cc", os.environ["CI_ANDROID_GUEST_CC"]]
     launcher = os.environ.get("CI_COMPILER_LAUNCHER")
     if launcher:
         configure += ["--compiler-launcher", launcher]
