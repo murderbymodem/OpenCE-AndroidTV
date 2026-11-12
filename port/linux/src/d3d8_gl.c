@@ -986,9 +986,22 @@ is done with it, so a large buffer orphaned each frame costs its size per
 frame in flight and more. Instead each frame streams into the next of a few
 smaller buffers, reusing one only once the GPU has finished the frame that
 last used it (host_gl_wait_frame). A busy frame streams about 5 MB of
-vertices. */
+vertices.
+
+The 32-bit app's devices (TV boxes with 2 or 3 GB, whose GPU memory is the
+system's) draw their geometry from the mirror and stream some 13 to 100 KB a
+frame (a Mali-G310 in network games), where the ring's 54 MB was a sixth of
+all the app's GPU memory: there its vertex buffers are 8 MB, and a frame that
+streams more orphans its buffer and goes on, as any full one does. (One
+upload must still fit a buffer: 8 MB of vertices is an eighth of the Xbox's
+memory.) */
+#ifdef HALO_ARM32_GUEST
+#define STREAM_BUFFER_SIZE (8 * 1024 * 1024)
+#define INDEX_BUFFER_SIZE (2 * 1024 * 1024)
+#else
 #define STREAM_BUFFER_SIZE (16 * 1024 * 1024)
 #define INDEX_BUFFER_SIZE (2 * 1024 * 1024)
+#endif
 #define STREAM_BUFFER_RING 3
 #else
 #define STREAM_BUFFER_SIZE (32 * 1024 * 1024)
