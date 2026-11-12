@@ -95,6 +95,15 @@ a phone's GPU draws with time to spare, elsewhere the window's resolution */
 #define RESOLUTION_SCALING "\"native\""
 #endif
 
+/* display.object_shadows: as on the Xbox, but off in the 32-bit Android app,
+whose devices (TV boxes with a Mali GPU) spend some 7 ms of a frame on the
+shadows' changes of render target (port/linux/game/object_shadows.c) */
+#ifdef HALO_ARM32_GUEST
+#define OBJECT_SHADOWS_DEFAULT "false"
+#else
+#define OBJECT_SHADOWS_DEFAULT "true"
+#endif
+
 static const struct config_setting config_settings[] =
 {
 	{ "display.fullscreen", _config_boolean, "true", "HALO_FULLSCREEN", _environment_value, _platform_desktop,
@@ -209,11 +218,13 @@ static const struct config_setting config_settings[] =
 		"Draw the menus' and HUD's text with the fonts in port/assets/fonts\n"
 		"(Overpass) at the resolution the game draws at, and the menus' titles\n"
 		"from port/assets/titles; false draws the maps' bitmap fonts and titles." },
-	{ "display.object_shadows", _config_boolean, "true", "HALO_OBJECT_SHADOWS", _environment_value, _platform_all,
+	{ "display.object_shadows", _config_boolean, OBJECT_SHADOWS_DEFAULT, "HALO_OBJECT_SHADOWS", _environment_value,
+		_platform_all,
 		"The objects' shadows on the ground. false leaves them out, which saves\n"
 		"the most time of a frame on slow GPUs that draw in tiles (phones and\n"
 		"TV boxes): each object's shadow takes several changes of render\n"
-		"target. Taken up at once." },
+		"target. Taken up at once. Off by default in the 32-bit Android app,\n"
+		"for the TV boxes it runs on." },
 	{ "display.shadow_resolution", _config_integer, "128", "HALO_SHADOW_RESOLUTION", _environment_value,
 		_platform_all,
 		"The size the objects' shadows are drawn at, in pixels each way: 128 as\n"
