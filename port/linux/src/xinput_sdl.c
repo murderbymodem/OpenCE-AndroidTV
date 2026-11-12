@@ -1279,8 +1279,9 @@ input.quick_turn_left and input.quick_turn_right name the buttons, separated
 by commas: paddle1 to paddle4 (SDL's: the right and left upper paddles, then
 the lower), misc1, or buttonN, the gamepad's Nth button as its driver numbers
 them, for one SDL has no name for. Empty: the left and right paddles, and in
-the Android app buttons 17 and 18 too, which are Android's BUTTON_C and
-BUTTON_Z, where 8BitDo's controllers put their paddles over Bluetooth. With
+the Android app buttons 18 (left) and 17 (right) too, which are Android's
+BUTTON_Z and BUTTON_C, where the 8BitDo Ultimate 2 puts its left and right
+paddles over Bluetooth. With
 the turn on, the first press of each of a gamepad's unnamed buttons is
 logged with its number, for finding which a paddle is. */
 
@@ -1366,8 +1367,8 @@ float halo_linux_quick_turn(short gamepad_index, float seconds)
 		if (rate > QUICK_TURN_MAXIMUM_RATE)
 			rate = QUICK_TURN_MAXIMUM_RATE;
 #ifdef HALO_ANDROID
-		snprintf(left_names, sizeof(left_names), "%s", left && *left ? left : "paddle2,paddle4,button17");
-		snprintf(right_names, sizeof(right_names), "%s", right && *right ? right : "paddle1,paddle3,button18");
+		snprintf(left_names, sizeof(left_names), "%s", left && *left ? left : "paddle2,paddle4,button18");
+		snprintf(right_names, sizeof(right_names), "%s", right && *right ? right : "paddle1,paddle3,button17");
 #else
 		snprintf(left_names, sizeof(left_names), "%s", left && *left ? left : "paddle2,paddle4");
 		snprintf(right_names, sizeof(right_names), "%s", right && *right ? right : "paddle1,paddle3");
