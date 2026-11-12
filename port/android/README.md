@@ -8,7 +8,8 @@
 Android instead, for devices whose Android runs only 32-bit apps (many
 Android TV devices, such as the Onn 4K Pro, even with a 64-bit processor);
 `--android-abis arm64-v8a,armeabi-v7a` makes one app with both. The
-32-bit app needs an ARMv7-A processor with NEON. Refer to "The 32-bit app"
+32-bit app needs an ARMv7-A processor with NEON, and runs ARMv8 code on
+an ARMv8 one. Refer to "The 32-bit app"
 below.
 
 The game shows its graphics with OpenGL ES 3. It plays sound through SDL3
@@ -745,6 +746,31 @@ convention), in an ordinary 32-bit app:
 - `HALO_ARM32_GUEST` and `HALO_ANDROID_GUEST` are defined for it, not
   `HALO_ARM64_GUEST`.
 
+The 32-bit app has a second image of the game, `halo_guest_armv8.elf`
+(`build/android/armv8`): the same sources compiled for ARMv8's 32-bit
+state (`-march=armv8-a -mfpu=neon-fp-armv8 -mtune=cortex-a55`). Most 32-bit
+Android TV boxes have a 64-bit processor under a 32-bit Android (the Onn 4K
+boxes' Cortex-A55, for example), and there the compiler's code divides with
+the processor's instruction and rounds with VRINT, where ARMv7 code calls a
+routine for each (some 900 places in the game). The host starts the ARMv8
+image where the processor says it is ARMv8 (the kernel's platform name
+`v8l`, or ARMv8's CRC32 instructions in its capabilities; never under an
+ARM translator), and the ARMv7 image everywhere else, so the app runs on
+every armeabi-v7a device with NEON. Both compute the same results: every
+instruction the ARMv8 image gains is exact, and neither fuses a multiply
+and an add. The log (tag `halo`) names the processor and the image:
+`guest image: halo_guest_armv8.elf`; addresses in a crash report are
+symbolized against the build's file of that name.
+`adb shell setprop debug.halo.guest_image armv7` (or `armv8`) starts that
+image whatever the processor, for comparing the two; `""` goes back to the
+processor's.
+
+Both images take `memcpy` and `memmove` from the guest runtime
+(`guest/runtime/guest_string.c`: sixteen bytes at a time through NEON
+registers, at any alignment) in place of musl's generic C ones, and the
+ARMv7 image rounds real numbers to integers in line
+(`halo_linux_prefix.h`, "rounding on ARMv7") in place of a call to `rint`.
+
 In a 32-bit process the game, ART, the graphics driver and the app share
 the 4 GB (or 3 GB) of address space, so the fixed ranges at 0x80000000 are
 more often taken by the time the game loads. The app then says so and
@@ -777,4 +803,5 @@ without.
 (floating-point and double-word loads and stores of addresses that are not
 a multiple of 4). Such an access is a SIGBUS in logcat (tag `halo`), with
 the guest's address: `llvm-addr2line -e build/android/armv7/halo_guest_armv7.elf <address>`
+(or `build/android/armv8/halo_guest_armv8.elf`, as the log's `guest image:` line says)
 names the line.
