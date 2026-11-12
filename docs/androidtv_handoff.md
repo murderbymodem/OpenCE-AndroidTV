@@ -246,6 +246,20 @@ may be something a client need not do, or the object loop may need a cheaper
 exact test. Collision results are simulation: any change must give the same
 results bit for bit.
 
+## The sampler froze the app at 50 samples a second (build 121)
+
+With `sample_seconds = 0.02` the user's app froze on the loading screen
+(the whole box once) and on the main menu. The sampler's signal handler
+called `host_low_owns` (which takes `memory_lock`) and `__android_log`:
+harmless once a second, but at 50 Hz it soon interrupted a thread that held
+one of those locks and then waited for it for ever. Build 121 with the
+setting at 0 is build 119. Fixed in the branch `claude/sampler-signal-safety`:
+the handler takes no lock (it copies registers and frames into a ring;
+`host_low_owns_try` gives up when `memory_lock` is busy) and the sampler's
+thread writes the log, leaving out a thread that has not moved ("same N"
+lines count those). Lesson: check what a signal handler calls before
+raising its rate.
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
