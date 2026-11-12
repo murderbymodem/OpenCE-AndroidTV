@@ -279,6 +279,7 @@ These settings are only for Android:
 | `display.resolution_scaling` | Also Linux's, with another default on Android. `"original"` (the default): the game draws the 480 lines of the Xbox, which the display scales up. `"native"`: the game draws at the display's resolution (1080 lines on a 1080p phone). `"75%"`, `"50%"` or `"25%"`: that part of the display's resolution each way, scaled up: less for the GPU to draw, for more frames a second and less heat. Video Setup's Resolution Scaling sets it, from the next frame. |
 | `debug.sample_seconds` | Refer to "Find problems". |
 | `debug.memory_watch` | `true` (the default): the app notices the game's writes to cached textures by page protection. `false`: it compares page contents once a frame instead, which is slower. Geometry uses the streaming path in either mode. Refer to "Limits". |
+| `debug.gl_refresh_state` | `false` (the default). `true`: every OpenGL value is set again for each draw, whatever the renderer remembers having set. Slower; for finding whether a GPU driver and the renderer disagree on what is set, which shows as black or missing surfaces. |
 
 ## Internet play
 

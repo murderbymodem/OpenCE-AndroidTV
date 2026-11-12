@@ -4950,6 +4950,19 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		stats.skipped_no_program++;
 		return NULL;
 	}
+#ifdef HALO_ANDROID
+	/* debug.gl_refresh_state: every GL value set again for each draw, as
+	if the shadows had been lost, for finding whether a driver's state and
+	the shadows disagree */
+	{
+		static int refresh = -1;
+
+		if (refresh < 0)
+			refresh = config_boolean("debug.gl_refresh_state") != 0;
+		if (refresh)
+			xgpu_gl_state_invalidate();
+	}
+#endif
 	{
 		const char *skip = debug_settings.skip_vertex_shaders;
 
