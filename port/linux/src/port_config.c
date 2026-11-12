@@ -123,6 +123,14 @@ thread waiting for the mixer (port/linux/src/dsound_sdl.c, mixer_gate) */
 #define AUDIO_HRTF_DEFAULT "true"
 #endif
 
+/* input.quick_turn_rate: off, but on in the 32-bit Android app, whose TV
+boxes are played with a gamepad whose back paddles nothing else uses */
+#ifdef HALO_ARM32_GUEST
+#define QUICK_TURN_RATE_DEFAULT "400.0"
+#else
+#define QUICK_TURN_RATE_DEFAULT "0.0"
+#endif
+
 /* display.vsync and display.max_fps: the 32-bit Android app's TV boxes draw
 a network game at 30 to 55 frames a second, and a steady 30 (the game's own
 tick rate), paced by max_fps with vsync off, plays better there than the
@@ -449,6 +457,17 @@ static const struct config_setting config_settings[] =
 		"The touch controls' swipe aiming gets a controller's aim assist: the\n"
 		"aim slows over a target and follows a moving one. false: none, as a\n"
 		"mouse (the bullets' own autoaim stays)." },
+	{ "input.quick_turn_rate", _config_real, QUICK_TURN_RATE_DEFAULT, "HALO_QUICK_TURN_RATE", _environment_value, _platform_all,
+		"Degrees a second the view turns while a gamepad's turn button (a back\n"
+		"paddle) is held, as the look stick held over at a high sensitivity,\n"
+		"720 at most; 0: the buttons do nothing." },
+	{ "input.quick_turn_left", _config_string, "\"\"", "HALO_QUICK_TURN_LEFT", _environment_value, _platform_all,
+		"The gamepad buttons that turn left, separated by commas: paddle1 to\n"
+		"paddle4, misc1, or buttonN (the log names a button's number when it is\n"
+		"first pressed). Empty: the left paddles." },
+	{ "input.quick_turn_right", _config_string, "\"\"", "HALO_QUICK_TURN_RIGHT", _environment_value, _platform_all,
+		"The gamepad buttons that turn right, as input.quick_turn_left. Empty:\n"
+		"the right paddles." },
 	{ "input.mouse_sensitivity", _config_real, "1.0", "HALO_MOUSE_SENSITIVITY", _environment_value, _platform_desktop,
 		"How far the view turns for the mouse's movement." },
 	{ "input.playstation_kernel_driver", _config_boolean, "false", "HALO_PLAYSTATION_KERNEL_DRIVER",

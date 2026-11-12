@@ -205,6 +205,26 @@ recording's guest samples are unsymbolized; releases' assets can be.
 If drops remain after this, record again: the next suspects are the Mali
 driver's share of the main thread and the GL thread idea below.
 
+## Turn buttons (branch `claude/androidtv-quick-turn`, not yet tested on the box)
+
+The user plays with an 8BitDo Ultimate 2 over Bluetooth and wanted its
+back paddles to turn quickly, without anything that would count as a cheat:
+not a fixed or instant 180, but what the look stick held over does at a
+high sensitivity. While a turn button is held the view turns at
+`input.quick_turn_rate` degrees a second (400 in the 32-bit app, off
+elsewhere, 720 at most), added to the stick's look in `player_control.c`
+(`halo_linux_quick_turn`, `xinput_sdl.c`) before the stun and the magnetism,
+which slow it as they slow the stick's. Local input only: nothing machines
+must agree on.
+
+Which buttons the paddles are over Bluetooth is a guess: Android's
+BUTTON_C (left) and BUTTON_Z (right), SDL's joystick buttons 17 and 18,
+from SDL's mappings of the 8BitDo Ultimate 2C; the Ultimate 2 has four
+(L4, R4, PL, PR). With the turn on, the log names each unnamed button the
+first time it is pressed (`gamepad: buttonN pressed`); `input.quick_turn_left`
+and `input.quick_turn_right` take `buttonN`. The host reads raw joystick
+buttons for the guest through `host_sdl_gamepad_button` (0x100 + N).
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile

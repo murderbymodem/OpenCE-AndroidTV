@@ -1253,6 +1253,20 @@ static void get_local_player_input_blob(
 						look_delta.yaw *= inverse_zoom;
 						look_delta.pitch *= inverse_zoom;
 					}
+					{
+						/* port: the gamepad's turn buttons (port/linux/src/xinput_sdl.c,
+						input.quick_turn_rate), a turn this frame made a rate as the
+						touch controls' is: what the stick held over does at a higher
+						sensitivity, whatever the zoom; the stun and the magnetism
+						below act on it as on the stick's */
+						extern float halo_linux_quick_turn(short gamepad_index, float seconds);
+						real quick_turn_scale = time_delta_sec * TICKS_PER_SECOND;
+
+						if (quick_turn_scale > _real_epsilon)
+						{
+							look_delta.yaw += halo_linux_quick_turn(gamepad_index, time_delta_sec) / quick_turn_scale;
+						}
+					}
 					if (player->unit_index != NONE)
 					{
 						struct game_globals_player_information *player_information =

@@ -289,6 +289,15 @@ int host_sdl_gamepad_button(uint32_t gamepad, int button)
 {
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
+	/* (from 0x100 on, the joystick's own buttons by their numbers, for those
+	the gamepad's mapping has no name for: the turn buttons, xinput_sdl.c) */
+	if (object && button >= 0x100)
+	{
+		SDL_Joystick *joystick = SDL_GetGamepadJoystick(object);
+
+		return joystick && button - 0x100 < SDL_GetNumJoystickButtons(joystick) &&
+			SDL_GetJoystickButton(joystick, button - 0x100);
+	}
 	return object ? SDL_GetGamepadButton(object, (SDL_GamepadButton)button) : 0;
 }
 
