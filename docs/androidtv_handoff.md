@@ -227,25 +227,6 @@ pressed`); `input.quick_turn_left` and `input.quick_turn_right` take
 `buttonN`. The host reads raw joystick buttons for the guest through
 `host_sdl_gamepad_button` (0x100 + N).
 
-## Profile of a busy co-op game as a client (2026-11-12, build 119)
-
-Main thread 91% of a core, and now it is the simulation: collision 56%
-(`collision_test_vector` 15%, 85% of that its loop over a cluster's objects
-testing each one's bounding sphere against the ray, with
-`cluster_partition_get_next_datum` another 6%; `collision_features_test_vector`
-7%, `collision_bsp_test_vector_recursive` 7%, `bsp2d_test_sphere_recursive`
-6%), objects and units 18%, the Mali driver 4%, the renderer's own code 4%.
-AI is 0% (a client does not run it). The mixer's thread 22% of a core.
-
-simpleperf has no callers for the guest (no unwind tables, and the kernel's
-frame-pointer walk does not read clang's 32-bit frames), so what casts the
-rays is not known. `debug.sample_seconds` now takes fractions (branch
-`claude/sampler-call-chains`): `sample_seconds = 0.02`, `adb logcat -s halo`
-to a file during the fight, then count callers. Decide from that: the rays
-may be something a client need not do, or the object loop may need a cheaper
-exact test. Collision results are simulation: any change must give the same
-results bit for bit.
-
 ## The sampler froze the app at 50 samples a second (build 121)
 
 With `sample_seconds = 0.02` the user's app froze on the loading screen
@@ -253,14 +234,14 @@ With `sample_seconds = 0.02` the user's app froze on the loading screen
 called `host_low_owns` (which takes `memory_lock`) and `__android_log`:
 harmless once a second, but at 50 Hz it soon interrupted a thread that held
 one of those locks and then waited for it for ever. Build 121 with the
-setting at 0 is build 119. Fixed in the branch `claude/sampler-signal-safety`:
+setting at 0 is build 119. Fixed in build 123:
 the handler takes no lock (it copies registers and frames into a ring;
 `host_low_owns_try` gives up when `memory_lock` is busy) and the sampler's
 thread writes the log, leaving out a thread that has not moved ("same N"
 lines count those). Lesson: check what a signal handler calls before
 raising its rate.
 
-## Issue 1: black screen on a Broadcom set-top box (branch `claude/opaque-window-surface`, untested)
+## Issue 1: black screen on a Broadcom set-top box (fixed in build 125)
 
 Technicolor UIW4059MIL (Broadcom BCM72180, VideoCore VI, OpenGL ES 3.1,
 Android TV 10, Cortex-A72, 32-bit): the game runs and sounds, the screen is
@@ -275,18 +256,29 @@ graphics plane over its video plane by it, so the picture is see-through
 except while Android composes the window itself for an animation. The web
 build already asks for an opaque canvas for the same reason.
 
-The branch asks for no alpha on Android (`SDL_GL_ALPHA_SIZE` 0, so an
-RGBX surface where the driver has one) and, where the window still has
-alpha bits, sets them to 1 before each swap (`window_alpha_opaque`,
-`d3d8_gl.c`); the log says which: `window: N bits of alpha`. Nobody here
-has the hardware: the reporter must try it, and the Onn boxes must be
-checked for no change (their log should say 0 bits).
+The app asks for no alpha on Android (`SDL_GL_ALPHA_SIZE` 0, so an RGBX
+surface where the driver has one) and, where the window still has alpha
+bits, sets them to 1 before each swap (`window_alpha_opaque`, `d3d8_gl.c`);
+the log says which: `window: N bits of alpha`. Confirmed by the reporter
+(0 bits there), no change on the Onn boxes.
+
+The reporter then saw about 15 fps. Their log: `shader cache: off (the
+driver keeps no program binaries)`, so first-use stutters every session;
+and `render chip: ... family=0`, an unrecognised chip, so both
+compatibility paths are on (geometry streamed every draw, CE textures
+converted), which the Onn runs without. Suggested test, no build needed:
+`adb shell setprop debug.halo.render_chip 3`. If it helps and draws
+correctly, add the box to `android_chip.c` from its `getprop`.
 
 ## Next steps
 
-1. Measure the branch on the box (above), then a fresh simpleperf profile
-   of the ARMv8 LTO build: the remaining ideas below should be chosen from
-   it, not guessed.
+Out of scope (decided 2026-11-13): busy co-op games with many players (the
+client simulates every character's movement: the main project's design),
+and controller rumble over Bluetooth (Android exposes no vibrator for the
+8BitDo Ultimate 2 in DInput mode).
+
+1. Choose what is next from a fresh profile of a campaign level or a
+   standard multiplayer game, not from guesses.
 2. A GL thread: the main thread is ~88% busy and about half of that is
    inside the Mali driver, while three of the four cores idle. Queuing the
    frame's GL calls (the guest's generated entry points, `guest_gl.c`) to a
