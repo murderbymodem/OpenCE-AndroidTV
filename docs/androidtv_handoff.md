@@ -260,6 +260,28 @@ thread writes the log, leaving out a thread that has not moved ("same N"
 lines count those). Lesson: check what a signal handler calls before
 raising its rate.
 
+## Issue 1: black screen on a Broadcom set-top box (branch `claude/opaque-window-surface`, untested)
+
+Technicolor UIW4059MIL (Broadcom BCM72180, VideoCore VI, OpenGL ES 3.1,
+Android TV 10, Cortex-A72, 32-bit): the game runs and sounds, the screen is
+black, but the picture shows during window animations. The reporter blamed
+NEXUS's "downgraded to eUntrusted" line; every ordinary app gets that. The
+likelier cause, from the code: SDL asks for a surface with alpha (the log's
+"pixel format wanted SDL_PIXELFORMAT_RGBA8888"), the game keeps scratch
+values in destination alpha, and the copy to the window takes them along
+(`glBlitFramebuffer` of the colour buffer). Most displays ignore a
+surface's alpha (the screenshot code says so); a Broadcom box composes its
+graphics plane over its video plane by it, so the picture is see-through
+except while Android composes the window itself for an animation. The web
+build already asks for an opaque canvas for the same reason.
+
+The branch asks for no alpha on Android (`SDL_GL_ALPHA_SIZE` 0, so an
+RGBX surface where the driver has one) and, where the window still has
+alpha bits, sets them to 1 before each swap (`window_alpha_opaque`,
+`d3d8_gl.c`); the log says which: `window: N bits of alpha`. Nobody here
+has the hardware: the reporter must try it, and the Onn boxes must be
+checked for no change (their log should say 0 bits).
+
 ## Next steps
 
 1. Measure the branch on the box (above), then a fresh simpleperf profile
