@@ -7938,6 +7938,33 @@ static void front_buffer_take(void)
 	device.front_buffer_taken = device.frame + 1;
 }
 
+#ifdef HALO_ANDROID
+/* The game keeps scratch values in destination alpha, and the copy to the
+window takes them along. Most displays ignore a surface's alpha; a few
+compose the screen from it (a Broadcom set-top box's graphics plane over its
+video plane), and show the picture only where the alpha happens to be 1. The
+app asks for a surface without alpha (sdl_platform.c); where the driver gave
+one with alpha all the same, its alpha is set to 1 before the swap, with the
+window bound for drawing and no scissor (the swap's caller). */
+static void window_alpha_opaque(void)
+{
+	static GLint alpha_bits = -1;
+
+	if (alpha_bits < 0)
+	{
+		alpha_bits = 0;
+		glGetIntegerv(GL_ALPHA_BITS, &alpha_bits);
+		platform_log("window: %d bits of alpha%s", (int)alpha_bits, alpha_bits > 0 ? ", made opaque each frame" : "");
+	}
+	if (alpha_bits <= 0)
+		return;
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+#endif
+
 #ifndef HALO_GLES
 /* after the swap: this frame's fence, then a wait for the frame
 frame_pacing.limit before it (a second at most: a GPU that slow is not
@@ -8036,6 +8063,9 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		}
 		glBindVertexArray(device.vertex_array);
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+#ifdef HALO_ANDROID
+		window_alpha_opaque();
+#endif
 		platform_video_swap();
 #ifndef HALO_GLES
 		frame_pacing_wait();

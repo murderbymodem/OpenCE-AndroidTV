@@ -1251,6 +1251,16 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 	colours through it) */
 	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
 #endif
+#ifdef HALO_ANDROID
+	/* an opaque surface, for the same reason: SDL otherwise asks for alpha,
+	and a device whose display is composed from the surface's own alpha (a
+	Broadcom set-top box's, whose graphics plane lies over its video plane)
+	shows the game's scratch values as holes: a black screen, but while a
+	window animation has Android compose it. Where the driver has only
+	surfaces with alpha, the renderer makes it opaque before each swap
+	(d3d8_gl.c, window_alpha_opaque). */
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
+#endif
 	if (config_boolean("debug.gl_debug"))
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 #if !defined(HALO_ANDROID) && !defined(_WIN32)
